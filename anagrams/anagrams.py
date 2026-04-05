@@ -117,7 +117,7 @@ class Anagrams(commands.Cog):
 
     # ── $anagrams [seconds] ───────────────────────────────────────────────────
 
-    @commands.command()
+    @commands.group(invoke_without_command=True)
     async def anagrams(self, ctx: commands.Context, duration: int = 60):
         """
         Start an anagram round. Anyone in chat can find words.
@@ -142,9 +142,8 @@ class Anagrams(commands.Cog):
         embed = discord.Embed(
             title="🔤  Anagram Round!",
             description=(
-                f"## {' · '.join(game.jumbled)}\n\n"
-                f"Find words using **only** these letters (each used as many times "
-                f"as it appears above). You have **{duration} seconds**!\n\n"
+                f"## {' '.join(game.jumbled)}\n\n"
+                f"Find words using these letters! You have **{duration} seconds**!\n\n"
                 "**Scoring**\n"
                 "3 letters = 40 pts  |  +20 pts per extra letter\n"
                 f"Guess the full word = word score **+ {FULL_WORD_BONUS} bonus pts!**"
@@ -155,6 +154,23 @@ class Anagrams(commands.Cog):
 
         task = asyncio.create_task(self._run_round(ctx.channel, game))
         self._tasks[ctx.channel.id] = task
+
+    @anagrams.command(name="stop")
+    async def anagrams_stop(self, ctx: commands.Context):
+        """Stop the current anagram round in this channel."""
+        game = self.games.pop(ctx.channel.id, None)
+        task = self._tasks.pop(ctx.channel.id, None)
+        if task:
+            task.cancel()
+        if game is None:
+            await ctx.send("No anagram round is running in this channel.")
+            return
+        embed = discord.Embed(
+            title="🛑  Round Ended",
+            description=f"The anagram round has been stopped.\nThe word was: **{game.word}**",
+            color=discord.Color.red(),
+        )
+        await ctx.send(embed=embed)
 
     # ── Timer ─────────────────────────────────────────────────────────────────
 
