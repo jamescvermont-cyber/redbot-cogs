@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Multiplayer anagram game. A scrambled word is shown and anyone in chat can find words hidden in the letters. Longer words score more, and guessing the full word earns a big bonus.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]pipinstall english-words` then `[p]load anagrams`.",
+    "name": "Anagrams",
+    "required_cogs": {},
+    "requirements": ["english-words"],
+    "short": "Multiplayer anagram word game",
+    "tags": ["game", "anagrams", "words", "fun"]
+}
