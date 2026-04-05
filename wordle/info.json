@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Multiplayer Wordle game for Discord. Start a game with [p]wordle and anyone in chat can guess the 5-letter word. Requires Pillow.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]pipinstall Pillow` if you haven't already, then `[p]load wordle`.",
+    "name": "Wordle",
+    "required_cogs": {},
+    "requirements": ["Pillow"],
+    "short": "Multiplayer Wordle game",
+    "tags": ["game", "wordle", "fun"]
+}
