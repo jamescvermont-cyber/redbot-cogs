@@ -162,18 +162,9 @@ def _join_embed(game: WordRushGame) -> discord.Embed:
     return embed
 
 
-def _turn_embed(
-    game: WordRushGame,
-    player: Player,
-    trigram: str,
-    remaining: Optional[int] = None,
-) -> discord.Embed:
+def _turn_text(player: Player, trigram: str, remaining: Optional[int] = None) -> str:
     countdown = f"  ⏳ **{remaining}**s" if remaining is not None and remaining <= 8 else ""
-    embed = discord.Embed(
-        description=f"type a word containing **{trigram}**{countdown}",
-        color=discord.Color.blurple(),
-    )
-    return embed
+    return f"{player.member.mention} type a word containing **{trigram}**{countdown}"
 
 
 def _lost_life_embed(player: Player) -> discord.Embed:
@@ -342,8 +333,7 @@ class WordRush(commands.Cog):
         game.current_trigram = trigram
         game.turn_event.clear()
 
-        embed = _turn_embed(game, player, trigram)
-        msg = await game.channel.send(content=player.member.mention, embed=embed)
+        msg = await game.channel.send(_turn_text(player, trigram))
 
         for remaining in range(game.round_time, 0, -1):
             # Check if on_message already resolved this turn
@@ -353,7 +343,7 @@ class WordRush(commands.Cog):
             # Edit countdown in the last 8 seconds
             if remaining <= 8:
                 with suppress(discord.HTTPException):
-                    await msg.edit(embed=_turn_embed(game, player, trigram, remaining))
+                    await msg.edit(content=_turn_text(player, trigram, remaining))
 
             # Wait up to 1 second for a correct guess
             try:
