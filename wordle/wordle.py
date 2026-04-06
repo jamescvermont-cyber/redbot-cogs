@@ -29,8 +29,8 @@ _KEY_GAP      = 4    # gap between keys in a row
 _KEY_ROW_GAP  = 6    # gap between keyboard rows
 _KBD_TOP      = 14   # space between bottom of board and top of keyboard
 
-_KEY_UNUSED   = (129, 131, 132)   # letter not yet guessed
-_KEY_ABSENT   = (58,  58,  60)    # guessed and not in word (same as _GRAY)
+_KEY_UNUSED   = (58,  58,  60)    # letter not yet guessed
+_KEY_ABSENT   = (129, 131, 132)   # guessed and not in word
 _KEY_PRESENT  = (181, 159, 59)    # guessed, wrong position (same as _YELLOW)
 _KEY_CORRECT  = (83,  141, 78)    # guessed, correct position (same as _GREEN)
 
