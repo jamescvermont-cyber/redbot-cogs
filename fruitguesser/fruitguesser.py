@@ -180,13 +180,18 @@ class FruitGuesser(commands.Cog):
         fruit: str,
         timeout: aiohttp.ClientTimeout,
     ) -> list[str]:
-        """Fallback: text-search Wikimedia Commons, filtering by filename."""
+        """Text-search Wikimedia Commons, filtering by filename.
+
+        Appends ' fruit' to the query when not already present so that
+        e.g. 'kiwi' becomes 'kiwi fruit' — avoiding birds, people, etc.
+        """
+        query = fruit if "fruit" in fruit.lower() else f"{fruit} fruit"
         async with session.get(
             "https://commons.wikimedia.org/w/api.php",
             params={
                 "action": "query",
                 "generator": "search",
-                "gsrsearch": fruit,
+                "gsrsearch": query,
                 "gsrnamespace": "6",
                 "gsrlimit": "50",
                 "prop": "imageinfo",
@@ -219,25 +224,24 @@ class FruitGuesser(commands.Cog):
     async def _fetch_images(self, fruit: str, max_count: int = 35) -> list[str]:
         """Return up to *max_count* relevant photo URLs for *fruit*.
 
-        Tries Wikipedia article images first (editor-curated, always
-        on-topic), then falls back to a filename-filtered Commons search
-        for variety names that may not have their own Wikipedia page.
+        Always combines Wikipedia article images (editor-curated) with a
+        'fruit'-suffixed Commons text search for a larger, varied pool.
         """
         timeout = aiohttp.ClientTimeout(total=15)
         headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
-                photos = await self._fetch_from_wikipedia(session, fruit, timeout)
-                if len(photos) < 5:
-                    fallback = await self._fetch_from_commons_search(
-                        session, fruit, timeout
-                    )
-                    # Merge, deduplicate, prefer Wikipedia results first
-                    seen = set(photos)
-                    for url in fallback:
-                        if url not in seen:
-                            seen.add(url)
-                            photos.append(url)
+                wiki_photos, commons_photos = await asyncio.gather(
+                    self._fetch_from_wikipedia(session, fruit, timeout),
+                    self._fetch_from_commons_search(session, fruit, timeout),
+                )
+            # Merge, deduplicate, Wikipedia results first
+            seen: set[str] = set()
+            photos: list[str] = []
+            for url in wiki_photos + commons_photos:
+                if url not in seen:
+                    seen.add(url)
+                    photos.append(url)
 
             random.shuffle(photos)
             return photos[:max_count]
