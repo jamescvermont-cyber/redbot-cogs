@@ -1,0 +1,260 @@
+import asyncio
+import random
+
+import aiohttp
+import discord
+from redbot.core import commands
+
+
+# ── Fruit list (~120 fruits) ──────────────────────────────────────────────────
+
+FRUITS = [
+    # Apples
+    "Apple", "Fuji Apple", "Honeycrisp Apple", "Granny Smith Apple",
+    "Gala Apple", "Braeburn Apple", "Pink Lady Apple", "McIntosh Apple",
+    # Pears
+    "Pear", "Bartlett Pear", "Asian Pear", "Bosc Pear",
+    # Citrus
+    "Orange", "Blood Orange", "Clementine", "Tangerine", "Mandarin",
+    "Grapefruit", "Pomelo", "Lemon", "Lime", "Meyer Lemon", "Kumquat",
+    "Yuzu", "Bergamot", "Cara Cara Orange", "Satsuma", "Ugli Fruit",
+    # Berries
+    "Strawberry", "Raspberry", "Blueberry", "Blackberry", "Cranberry",
+    "Gooseberry", "Boysenberry", "Elderberry", "Mulberry", "Huckleberry",
+    "Lingonberry", "Cloudberry", "Acai",
+    # Stone Fruits
+    "Peach", "Nectarine", "Plum", "Cherry", "Apricot", "Damson Plum",
+    # Tropical (common)
+    "Banana", "Plantain", "Pineapple", "Mango", "Papaya", "Coconut",
+    "Guava", "Passion Fruit", "Dragon Fruit", "Lychee", "Longan",
+    "Rambutan", "Jackfruit", "Durian", "Mangosteen", "Starfruit",
+    # Tropical (less common but recognizable)
+    "Soursop", "Cherimoya", "Feijoa", "Tamarind", "Breadfruit",
+    "Ackee", "Sapodilla", "Sugar Apple", "Mamey Sapote", "Jabuticaba",
+    # Melons
+    "Watermelon", "Cantaloupe", "Honeydew Melon", "Canary Melon",
+    "Galia Melon", "Crenshaw Melon",
+    # Grapes
+    "Grape", "Concord Grape", "Moondrop Grape", "Cotton Candy Grape",
+    "Muscat Grape",
+    # Other common
+    "Kiwi", "Golden Kiwi", "Fig", "Date", "Pomegranate", "Avocado",
+    "Persimmon", "Quince", "Loquat", "Currant", "Olive", "Noni",
+    "Finger Lime",
+]
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _scramble(name: str) -> str:
+    """Scramble each word in the fruit name independently."""
+    words = name.split()
+    scrambled = []
+    for word in words:
+        letters = list(word)
+        random.shuffle(letters)
+        scrambled.append("".join(letters))
+    return " ".join(scrambled)
+
+
+# ── Game state ────────────────────────────────────────────────────────────────
+
+class FruitGame:
+    MAX_HINTS = 3
+
+    def __init__(self, fruit: str, images: list, task: asyncio.Task):
+        self.fruit = fruit
+        self.images = images          # list of image URLs fetched up front
+        self.used: set = set()        # indices already shown this round
+        self.hints_used = 0
+        self.task = task
+
+    def pop_image(self) -> str | None:
+        if not self.images:
+            return None
+        unused = [i for i in range(len(self.images)) if i not in self.used]
+        if not unused:                # exhausted all images — reset pool
+            self.used.clear()
+            unused = list(range(len(self.images)))
+        idx = random.choice(unused)
+        self.used.add(idx)
+        return self.images[idx]
+
+
+# ── Cog ───────────────────────────────────────────────────────────────────────
+
+class FruitGuesser(commands.Cog):
+    """Fruit guessing game — who can identify the mystery fruit from a photo?"""
+
+    def __init__(self, bot):
+        self.bot = bot
+        self.games: dict[int, FruitGame] = {}   # channel_id → FruitGame
+
+    # ── Image fetching ────────────────────────────────────────────────────────
+
+    async def _fetch_images(self, fruit: str, max_count: int = 35) -> list[str]:
+        """Return up to *max_count* photo URLs from Wikimedia Commons."""
+        timeout = aiohttp.ClientTimeout(total=15)
+        headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(
+                    "https://commons.wikimedia.org/w/api.php",
+                    params={
+                        "action": "query",
+                        "generator": "search",
+                        "gsrsearch": fruit,
+                        "gsrnamespace": "6",   # File: namespace
+                        "gsrlimit": "50",
+                        "prop": "imageinfo",
+                        "iiprop": "url|mime",
+                        "iiurlwidth": "800",
+                        "format": "json",
+                        "formatversion": "2",
+                    },
+                    timeout=timeout,
+                ) as resp:
+                    data = await resp.json()
+
+            photos = []
+            pages = data.get("query", {}).get("pages", [])
+            for page in pages:
+                for info in page.get("imageinfo", []):
+                    if info.get("mime") not in ("image/jpeg", "image/png"):
+                        continue
+                    url = info.get("thumburl") or info.get("url", "")
+                    if url.startswith("http"):
+                        photos.append(url)
+
+            random.shuffle(photos)
+            return photos[:max_count]
+        except Exception:
+            return []
+
+    # ── Timer ─────────────────────────────────────────────────────────────────
+
+    async def _game_timer(self, channel: discord.TextChannel, fruit: str):
+        """Background task that ends the round after 60 seconds."""
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            return  # game was won; task cancelled by on_message handler
+
+        if channel.id not in self.games:
+            return
+
+        del self.games[channel.id]
+        embed = discord.Embed(
+            title="Time's up!",
+            description=f"Nobody guessed it. The fruit was **{fruit}**.",
+            color=discord.Color(0x99aab5),   # Discord greyple
+        )
+        await channel.send(embed=embed)
+
+    # ── Commands ──────────────────────────────────────────────────────────────
+
+    @commands.command()
+    async def fruitguesser(self, ctx: commands.Context):
+        """Start a fruit guessing game. 60 seconds — can you name it?"""
+        if ctx.channel.id in self.games:
+            await ctx.send(
+                "A game is already running here! "
+                "Type your guess or `$hint` for another image."
+            )
+            return
+
+        fruit = random.choice(FRUITS)
+        loading = await ctx.send("Searching for images...")
+
+        images = await self._fetch_images(fruit)
+        if not images:
+            await loading.edit(content="Couldn't fetch images right now. Please try again!")
+            return
+
+        task = asyncio.create_task(self._game_timer(ctx.channel, fruit))
+        game = FruitGame(fruit, images, task)
+        self.games[ctx.channel.id] = game
+
+        embed = discord.Embed(
+            title="What fruit is this?",
+            description=(
+                "Type your guess in chat — anyone can answer!\n"
+                "You have **60 seconds**. Type `$hint` for clues *(3 max, last hint scrambles the name)*."
+            ),
+            color=discord.Color.green(),
+        )
+        embed.set_image(url=game.pop_image())
+        await loading.edit(content=None, embed=embed)
+
+    @commands.command()
+    async def hint(self, ctx: commands.Context):
+        """Get a clue for the current fruit guessing game (3 max; last hint scrambles the name)."""
+        game = self.games.get(ctx.channel.id)
+        if not game:
+            await ctx.send("No game is running here. Start one with `$fruitguesser`!")
+            return
+        if game.hints_used >= FruitGame.MAX_HINTS:
+            await ctx.send("All **3** hints have been used — keep guessing!")
+            return
+
+        game.hints_used += 1
+        remaining = FruitGame.MAX_HINTS - game.hints_used
+        footer = f"{remaining} hint(s) remaining." if remaining else "No more hints after this!"
+
+        is_final = game.hints_used == FruitGame.MAX_HINTS
+        if is_final:
+            embed = discord.Embed(
+                title=f"Hint {game.hints_used}/{FruitGame.MAX_HINTS} — Final Hint!",
+                description=f"The fruit name scrambled: **{_scramble(game.fruit)}**",
+                color=discord.Color.red(),
+            )
+            embed.set_footer(text=footer)
+        else:
+            embed = discord.Embed(
+                title=f"Hint {game.hints_used}/{FruitGame.MAX_HINTS}",
+                description="Here's another look!",
+                color=discord.Color.gold(),
+            )
+            embed.set_image(url=game.pop_image())
+            embed.set_footer(text=footer)
+        await ctx.send(embed=embed)
+
+    # ── Guess listener ────────────────────────────────────────────────────────
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+        game = self.games.get(message.channel.id)
+        if not game:
+            return
+
+        # Ignore valid bot commands (e.g. $hint, $fruitguesser)
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
+            return
+
+        if message.content.strip().lower() != game.fruit.lower():
+            return
+
+        # ── Correct guess ──────────────────────────────────────────────────
+        game.task.cancel()
+        del self.games[message.channel.id]
+
+        embed = discord.Embed(
+            title="Correct!",
+            description=(
+                f"**{message.author.display_name}** got it!\n\n"
+                f"The fruit was **{game.fruit}**! Congratulations!"
+            ),
+            color=discord.Color.green(),
+        )
+        embed.set_footer(text="Start a new game any time with $fruitguesser!")
+        await message.channel.send(embed=embed)
+
+    # ── Cleanup on unload ─────────────────────────────────────────────────────
+
+    def cog_unload(self):
+        for game in self.games.values():
+            game.task.cancel()
+        self.games.clear()

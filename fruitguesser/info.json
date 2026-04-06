@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Fruit guessing game — the bot shows a photo of a mystery fruit and players have 60 seconds to guess it. Type $hint for up to 2 extra images, then a scrambled name.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Load the cog with `[p]load fruitguesser`, then start a game with `$fruitguesser`.",
+    "name": "FruitGuesser",
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Fruit photo guessing game",
+    "tags": ["game", "fruit", "trivia", "fun", "images"]
+}
