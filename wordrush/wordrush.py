@@ -8,6 +8,7 @@ import discord
 from redbot.core import Config, commands
 
 from .slang import SLANG_WORDS
+from .proper_nouns import PROPER_NOUNS
 
 # ── Dictionary ────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ def _load_dictionary() -> frozenset:
             base = english_words_lower_set
         except ImportError:
             pass
-    return frozenset(base | {w.lower() for w in SLANG_WORDS})
+    return frozenset(base | {w.lower() for w in SLANG_WORDS} | PROPER_NOUNS)
 
 
 def _build_trigram_list(dictionary: frozenset) -> list:
@@ -141,7 +142,7 @@ def _join_embed(game: WordRushGame) -> discord.Embed:
     else:
         plist = "*No one yet — be the first!*"
     embed = discord.Embed(
-        title="🔤  Word Rush — Join Phase!",
+        title="🔤  Word Rush",
         description=(
             "Find a word containing the 3 displayed letters before time runs out!\n"
             "Click **Join Game** to play!\n\n"
@@ -149,15 +150,15 @@ def _join_embed(game: WordRushGame) -> discord.Embed:
         ),
         color=discord.Color.blurple(),
     )
-    embed.add_field(
-        name="Settings",
-        value=(
-            f"⏱ **{game.round_time}s** per turn  ·  "
-            f"❤️ **{game.max_lives}** {'life' if game.max_lives == 1 else 'lives'}  ·  "
-            f"📚 SYLL **{game.syll}**"
-        ),
-        inline=False,
-    )
+    # embed.add_field(
+    #     name="Settings",
+    #     value=(
+    #         f"⏱ **{game.round_time}s** per turn  ·  "
+    #         f"❤️ **{game.max_lives}** {'life' if game.max_lives == 1 else 'lives'}  ·  "
+    #         f"📚 SYLL **{game.syll}**"
+    #     ),
+    #     inline=False,
+    # )
     return embed
 
 
@@ -169,7 +170,7 @@ def _turn_embed(
 ) -> discord.Embed:
     countdown = f"  ⏳ **{remaining}**s" if remaining is not None and remaining <= 8 else ""
     embed = discord.Embed(
-        description=f"{player.member.mention}, type a word containing **{trigram}**!{countdown}",
+        description=f"type a word containing **{trigram}**{countdown}",
         color=discord.Color.blurple(),
     )
     return embed
@@ -342,7 +343,7 @@ class WordRush(commands.Cog):
         game.turn_event.clear()
 
         embed = _turn_embed(game, player, trigram)
-        msg = await game.channel.send(embed=embed)
+        msg = await game.channel.send(content=player.member.mention, embed=embed)
 
         for remaining in range(game.round_time, 0, -1):
             # Check if on_message already resolved this turn
