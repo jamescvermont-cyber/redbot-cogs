@@ -235,6 +235,14 @@ class Anagrams(commands.Cog):
         )
         await ctx.send(embed=embed)
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        task = self._tasks.pop(channel_id, None)
+        if task:
+            task.cancel()
+        return "Anagrams" if game is not None else None
+
     # ── Timer ─────────────────────────────────────────────────────────────────
 
     async def _run_round(self, channel: discord.TextChannel, game: AnagramGame):

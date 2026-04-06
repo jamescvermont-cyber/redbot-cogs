@@ -110,6 +110,15 @@ class WordGuesser(commands.Cog):
             color=discord.Color.red(),
         ))
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        if game is None:
+            return None
+        if game.task:
+            game.task.cancel()
+        return "Word Guesser"
+
     # ── Game Runner ───────────────────────────────────────────────────────────
 
     async def _run_round(self, ctx: commands.Context, game: WordGame):

@@ -360,6 +360,14 @@ class AnimalGuesser(commands.Cog):
 
     # ── Cleanup on unload ─────────────────────────────────────────────────────
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        if game is None:
+            return None
+        game.task.cancel()
+        return "Animal Guesser"
+
     def cog_unload(self):
         for game in self.games.values():
             game.task.cancel()

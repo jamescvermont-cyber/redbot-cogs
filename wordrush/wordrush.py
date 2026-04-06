@@ -271,6 +271,16 @@ class WordRush(commands.Cog):
             color=discord.Color.red(),
         ))
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        if game is None:
+            return None
+        if game.game_task:
+            game.game_task.cancel()
+        game.phase = "ended"
+        return "Word Rush"
+
     @commands.command(name="wrtime")
     async def wrtime(self, ctx: commands.Context, seconds: int):
         """Set the turn time in seconds (10–120). Example: `$wrtime 40`"""

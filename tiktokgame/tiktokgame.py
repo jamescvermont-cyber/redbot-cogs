@@ -284,6 +284,14 @@ class TikTokGameCog(commands.Cog):
         self.games[ctx.channel.id].stop()
         await ctx.send("🛑 Tournament stopped.")
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.get(channel_id)
+        if game is None:
+            return None
+        game.stop()
+        return "TikTok Game"
+
     # ------------------------------------------------------------------
     # Internal game loop
     # ------------------------------------------------------------------

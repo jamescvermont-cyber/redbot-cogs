@@ -234,6 +234,11 @@ class Wordle(commands.Cog):
             return
         await ctx.send(f"Game stopped. The word was **{game.word}**.")
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        return "Wordle" if game is not None else None
+
     # ── Guess listener ────────────────────────────────────────────────────────
 
     @commands.Cog.listener()

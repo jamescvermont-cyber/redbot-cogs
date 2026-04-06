@@ -414,8 +414,11 @@ class FruitGuesser(commands.Cog):
             ),
             color=discord.Color.green(),
         )
-        embed.set_image(url=game.pop_image())
+        image_url = game.pop_image()
+        embed.set_image(url=image_url)
         await loading.edit(content=None, embed=embed, view=FruitHintView(self, ctx.channel.id))
+        if DEV_MODE:
+            await ctx.send(f"🟡 **[DEV]** embed image URL:\n{image_url}")
 
     # ── Guess listener ────────────────────────────────────────────────────────
 
@@ -451,6 +454,14 @@ class FruitGuesser(commands.Cog):
         await message.channel.send(embed=embed)
 
     # ── Cleanup on unload ─────────────────────────────────────────────────────
+
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        if game is None:
+            return None
+        game.task.cancel()
+        return "Fruit Guesser"
 
     def cog_unload(self):
         for game in self.games.values():
