@@ -167,29 +167,10 @@ def _turn_embed(
     trigram: str,
     remaining: Optional[int] = None,
 ) -> discord.Embed:
-    alive = game.alive_players()
-    lives_lines = []
-    for p in alive:
-        arrow = "▶ " if p.member.id == player.member.id else "\u3000 "
-        lives_lines.append(f"{arrow}**{p.member.display_name}**: {_hearts(p.lives)}")
-
-    time_str = ""
-    if remaining is not None and remaining <= 8:
-        time_str = f"\n\n⏳ **{remaining}** second{'s' if remaining != 1 else ''} left!"
-
+    countdown = f"  ⏳ **{remaining}**s" if remaining is not None and remaining <= 8 else ""
     embed = discord.Embed(
-        title=f"🔤  Word Rush — {player.member.display_name}'s Turn",
-        description=(
-            f"## {' ‧ '.join(trigram)}\n\n"
-            f"{player.member.mention}, type a word containing **{trigram}**!"
-            f"{time_str}"
-        ),
+        description=f"{player.member.mention}, type a word containing **{trigram}**!{countdown}",
         color=discord.Color.blurple(),
-    )
-    embed.add_field(
-        name="Players",
-        value="\n".join(lives_lines) or "*none*",
-        inline=False,
     )
     return embed
 
@@ -233,7 +214,7 @@ class WordRush(commands.Cog):
         self.bot = bot
         self.games: dict = {}
         self.config = Config.get_conf(self, identifier=7391048201, force_registration=True)
-        self.config.register_guild(round_time=20, lives=2, syll=2000)
+        self.config.register_guild(round_time=26, lives=2, syll=2000)
         self.config.register_member(wins=0, games_played=0)
 
     def cog_unload(self):
