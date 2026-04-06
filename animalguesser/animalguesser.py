@@ -92,8 +92,19 @@ ANIMALS = [
 
 # ── Game state ────────────────────────────────────────────────────────────────
 
+def _scramble(name: str) -> str:
+    """Scramble each word in the animal name independently."""
+    words = name.split()
+    scrambled = []
+    for word in words:
+        letters = list(word)
+        random.shuffle(letters)
+        scrambled.append("".join(letters))
+    return " ".join(scrambled)
+
+
 class AnimalGame:
-    MAX_HINTS = 3
+    MAX_HINTS = 4
 
     def __init__(self, animal: str, images: list, task: asyncio.Task):
         self.animal = animal
@@ -203,7 +214,7 @@ class AnimalGuesser(commands.Cog):
             title="What animal is this?",
             description=(
                 "Type your guess in chat — anyone can answer!\n"
-                "You have **60 seconds**. Type `$hint` for another image *(3 max)*."
+                "You have **60 seconds**. Type `$hint` for clues *(4 max, last hint scrambles the name)*."
             ),
             color=discord.Color.blurple(),
         )
@@ -212,26 +223,35 @@ class AnimalGuesser(commands.Cog):
 
     @commands.command()
     async def hint(self, ctx: commands.Context):
-        """Get a new image clue for the current animal guessing game."""
+        """Get a clue for the current animal guessing game (4 max; last hint scrambles the name)."""
         game = self.games.get(ctx.channel.id)
         if not game:
             await ctx.send("No game is running here. Start one with `$animalguesser`!")
             return
         if game.hints_used >= AnimalGame.MAX_HINTS:
-            await ctx.send("All **3** hints have been used — keep guessing!")
+            await ctx.send("All **4** hints have been used — keep guessing!")
             return
 
         game.hints_used += 1
         remaining = AnimalGame.MAX_HINTS - game.hints_used
         footer = f"{remaining} hint(s) remaining." if remaining else "No more hints after this!"
 
-        embed = discord.Embed(
-            title=f"Hint {game.hints_used}/{AnimalGame.MAX_HINTS}",
-            description="Here's another look!",
-            color=discord.Color.gold(),
-        )
-        embed.set_image(url=game.pop_image())
-        embed.set_footer(text=footer)
+        is_final = game.hints_used == AnimalGame.MAX_HINTS
+        if is_final:
+            embed = discord.Embed(
+                title=f"Hint {game.hints_used}/{AnimalGame.MAX_HINTS} — Final Hint!",
+                description=f"The animal name scrambled: **{_scramble(game.animal)}**",
+                color=discord.Color.red(),
+            )
+            embed.set_footer(text=footer)
+        else:
+            embed = discord.Embed(
+                title=f"Hint {game.hints_used}/{AnimalGame.MAX_HINTS}",
+                description="Here's another look!",
+                color=discord.Color.gold(),
+            )
+            embed.set_image(url=game.pop_image())
+            embed.set_footer(text=footer)
         await ctx.send(embed=embed)
 
     # ── Guess listener ────────────────────────────────────────────────────────
