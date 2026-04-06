@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Multiplayer Word Rush game. A 3-letter combination is shown; each player must type a valid word containing those letters before time runs out. Lose all your lives and you're eliminated — last one standing wins!",
+    "end_user_data_statement": "This cog stores win/game statistics per user per guild.",
+    "hidden": false,
+    "install_msg": "Run `[p]pipinstall english-words` then `[p]load wordrush`.",
+    "name": "WordRush",
+    "required_cogs": {},
+    "requirements": ["english-words"],
+    "short": "Multiplayer word-under-pressure game",
+    "tags": ["game", "words", "multiplayer", "fun", "competitive"]
+}
