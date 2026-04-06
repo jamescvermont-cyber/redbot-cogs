@@ -1,4 +1,5 @@
 import asyncio
+import io
 import random
 
 import aiohttp
@@ -199,12 +200,22 @@ class AnimalHintView(discord.ui.View):
                 description="Here's another look!",
                 color=discord.Color.gold(),
             )
-            embed.set_image(url=game.pop_image())
+            hint_url = game.pop_image()
+            img_data = await self.cog._download_image(hint_url)
             embed.set_footer(text=footer)
-            await interaction.followup.send(
-                embed=embed,
-                view=AnimalHintView(self.cog, self.channel_id),
-            )
+            if img_data:
+                embed.set_image(url="attachment://hint.jpg")
+                await interaction.followup.send(
+                    embed=embed,
+                    file=discord.File(io.BytesIO(img_data), filename="hint.jpg"),
+                    view=AnimalHintView(self.cog, self.channel_id),
+                )
+            else:
+                embed.set_image(url=hint_url)
+                await interaction.followup.send(
+                    embed=embed,
+                    view=AnimalHintView(self.cog, self.channel_id),
+                )
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
@@ -270,6 +281,19 @@ class AnimalGuesser(commands.Cog):
         except Exception:
             return []
 
+    async def _download_image(self, url: str) -> bytes | None:
+        """Download an image URL and return its bytes, or None on failure."""
+        timeout = aiohttp.ClientTimeout(total=10)
+        headers = {"User-Agent": "AnimalGuesserBot/1.0 (Discord Bot)"}
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, timeout=timeout) as resp:
+                    if resp.status == 200:
+                        return await resp.read()
+        except Exception:
+            pass
+        return None
+
     # ── Timer ─────────────────────────────────────────────────────────────────
 
     async def _game_timer(self, channel: discord.TextChannel, animal: str):
@@ -322,8 +346,19 @@ class AnimalGuesser(commands.Cog):
             ),
             color=discord.Color.blurple(),
         )
-        embed.set_image(url=game.pop_image())
-        await loading.edit(content=None, embed=embed, view=AnimalHintView(self, ctx.channel.id))
+        image_url = game.pop_image()
+        img_data = await self._download_image(image_url)
+        await loading.delete()
+        if img_data:
+            embed.set_image(url="attachment://animal.jpg")
+            await ctx.send(
+                embed=embed,
+                file=discord.File(io.BytesIO(img_data), filename="animal.jpg"),
+                view=AnimalHintView(self, ctx.channel.id),
+            )
+        else:
+            embed.set_image(url=image_url)
+            await ctx.send(embed=embed, view=AnimalHintView(self, ctx.channel.id))
 
     # ── Guess listener ────────────────────────────────────────────────────────
 

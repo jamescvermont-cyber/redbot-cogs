@@ -335,23 +335,23 @@ class FruitGuesser(commands.Cog):
             wiki_photos, commons_photos = results
             if isinstance(wiki_photos, Exception):
                 log.error("Wikipedia fetch failed for %r: %s", fruit, wiki_photos)
-                if DEV_MODE and dev_channel:
-                    await dev_channel.send(f"🔴 **[DEV]** Wikipedia fetch failed for `{fruit}`:\n```{wiki_photos}```")
+                # if DEV_MODE and dev_channel:
+                #     await dev_channel.send(f"🔴 **[DEV]** Wikipedia fetch failed for `{fruit}`:\n```{wiki_photos}```")
                 wiki_photos = []
             if isinstance(commons_photos, Exception):
                 log.error("Commons fetch failed for %r: %s", fruit, commons_photos)
-                if DEV_MODE and dev_channel:
-                    await dev_channel.send(f"🔴 **[DEV]** Commons fetch failed for `{fruit}`:\n```{commons_photos}```")
+                # if DEV_MODE and dev_channel:
+                #     await dev_channel.send(f"🔴 **[DEV]** Commons fetch failed for `{fruit}`:\n```{commons_photos}```")
                 commons_photos = []
 
             log.debug("Fetched %d wiki + %d commons images for %r", len(wiki_photos), len(commons_photos), fruit)
-            if DEV_MODE and dev_channel:
-                sample = (wiki_photos + commons_photos)[:3]
-                sample_str = "\n".join(sample) if sample else "none"
-                await dev_channel.send(
-                    f"🟡 **[DEV]** `{fruit}`: {len(wiki_photos)} wiki + {len(commons_photos)} commons\n"
-                    f"First URLs:\n{sample_str}"
-                )
+            # if DEV_MODE and dev_channel:
+            #     sample = (wiki_photos + commons_photos)[:3]
+            #     sample_str = "\n".join(sample) if sample else "none"
+            #     await dev_channel.send(
+            #         f"🟡 **[DEV]** `{fruit}`: {len(wiki_photos)} wiki + {len(commons_photos)} commons\n"
+            #         f"First URLs:\n{sample_str}"
+            #     )
 
             # Merge, deduplicate, Wikipedia results first
             seen: set[str] = set()
@@ -363,14 +363,14 @@ class FruitGuesser(commands.Cog):
 
             if not photos:
                 log.warning("No images found for fruit %r", fruit)
-                if DEV_MODE and dev_channel:
-                    await dev_channel.send(f"⚠️ **[DEV]** No images found for `{fruit}` after merging.")
+                # if DEV_MODE and dev_channel:
+                #     await dev_channel.send(f"⚠️ **[DEV]** No images found for `{fruit}` after merging.")
             random.shuffle(photos)
             return photos[:max_count]
         except Exception as e:
             log.exception("Unexpected error fetching images for %r", fruit)
-            if DEV_MODE and dev_channel:
-                await dev_channel.send(f"🔴 **[DEV]** Unexpected error fetching images for `{fruit}`:\n```{e}```")
+            # if DEV_MODE and dev_channel:
+            #     await dev_channel.send(f"🔴 **[DEV]** Unexpected error fetching images for `{fruit}`:\n```{e}```")
             return []
 
     async def _download_image(self, url: str) -> bytes | None:
@@ -451,9 +451,9 @@ class FruitGuesser(commands.Cog):
         else:
             embed.set_image(url=image_url)
             await ctx.send(embed=embed, view=FruitHintView(self, ctx.channel.id))
-        if DEV_MODE:
-            status = "downloaded" if img_data else "URL fallback"
-            await ctx.send(f"🟡 **[DEV]** image: {status} — `{image_url}`")
+        # if DEV_MODE:
+        #     status = "downloaded" if img_data else "URL fallback"
+        #     await ctx.send(f"🟡 **[DEV]** image: {status} — `{image_url}`")
 
     # ── Guess listener ────────────────────────────────────────────────────────
 
