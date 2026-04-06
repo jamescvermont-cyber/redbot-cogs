@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Exquisite Corpse — a blind collaborative storytelling game. Players take turns writing sentences, each seeing only the last 4 words of the previous one. The full story is revealed at the end.",
+    "end_user_data_statement": "This cog does not store any user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]load corpse` to enable. No extra dependencies required.",
+    "name": "ExquisiteCorpse",
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Blind collaborative storytelling game",
+    "tags": ["game", "story", "multiplayer", "fun", "creative", "writing"]
+}
