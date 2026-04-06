@@ -7,13 +7,22 @@ from typing import Optional
 import discord
 from redbot.core import Config, commands
 
-try:
-    import importlib.util as _ilu, pathlib as _pl
-    _spec = _ilu.spec_from_file_location("_dev", _pl.Path(__file__).parent.parent / "_dev.py")
-    _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
-    DEV_MODE, DEV_LABEL = _mod.DEV_MODE, _mod.DEV_LABEL
-except Exception:
-    DEV_MODE, DEV_LABEL = False, ""
+# ── Dev mode — set DEV_MODE = False for production ───────────────────────────
+DEV_MODE = True
+
+if DEV_MODE:
+    import subprocess as _sp, pathlib as _pl
+    try:
+        _sha = _sp.check_output(
+            ["git", "-C", str(_pl.Path(__file__).parent), "rev-parse", "--short", "HEAD"],
+            stderr=_sp.DEVNULL, text=True,
+        ).strip()
+    except Exception:
+        _sha = "dev"
+    DEV_LABEL = f"  [{_sha}]"
+else:
+    DEV_LABEL = ""
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ── Dictionary & Prefix Set ───────────────────────────────────────────────────
 
