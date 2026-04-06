@@ -92,39 +92,152 @@ class FruitGuesser(commands.Cog):
 
     # ── Image fetching ────────────────────────────────────────────────────────
 
-    async def _fetch_images(self, fruit: str, max_count: int = 35) -> list[str]:
-        """Return up to *max_count* photo URLs from Wikimedia Commons."""
-        timeout = aiohttp.ClientTimeout(total=15)
-        headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(
-                    "https://commons.wikimedia.org/w/api.php",
-                    params={
-                        "action": "query",
-                        "generator": "search",
-                        "gsrsearch": fruit,
-                        "gsrnamespace": "6",   # File: namespace
-                        "gsrlimit": "50",
-                        "prop": "imageinfo",
-                        "iiprop": "url|mime",
-                        "iiurlwidth": "800",
-                        "format": "json",
-                        "formatversion": "2",
-                    },
-                    timeout=timeout,
-                ) as resp:
-                    data = await resp.json()
+    # Keywords that indicate a file is NOT a fruit photo
+    _SKIP_KEYWORDS = frozenset({
+        "flag", "map", "logo", "icon", "coat_of_arms", "seal", "blank",
+        "distribution", "chart", "diagram", "silhouette", "location",
+        "outline", "locator", "signature", "portrait", "person",
+    })
 
-            photos = []
-            pages = data.get("query", {}).get("pages", [])
-            for page in pages:
+    @classmethod
+    def _is_photo_title(cls, title: str) -> bool:
+        t = title.lower().replace(" ", "_")
+        if t.endswith((".svg", ".gif", ".ogg", ".ogv", ".webm", ".wav", ".mp3")):
+            return False
+        return not any(kw in t for kw in cls._SKIP_KEYWORDS)
+
+    async def _urls_from_titles(
+        self,
+        session: aiohttp.ClientSession,
+        titles: list[str],
+        timeout: aiohttp.ClientTimeout,
+    ) -> list[str]:
+        """Resolve a list of File: titles to 800px thumbnail URLs."""
+        photos = []
+        for i in range(0, len(titles), 20):   # API max 20 titles per request
+            batch = titles[i : i + 20]
+            async with session.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "titles": "|".join(batch),
+                    "prop": "imageinfo",
+                    "iiprop": "url|mime",
+                    "iiurlwidth": "800",
+                    "format": "json",
+                    "formatversion": "2",
+                },
+                timeout=timeout,
+            ) as resp:
+                data = await resp.json()
+            for page in data.get("query", {}).get("pages", []):
                 for info in page.get("imageinfo", []):
                     if info.get("mime") not in ("image/jpeg", "image/png"):
                         continue
                     url = info.get("thumburl") or info.get("url", "")
                     if url.startswith("http"):
                         photos.append(url)
+        return photos
+
+    async def _fetch_from_wikipedia(
+        self,
+        session: aiohttp.ClientSession,
+        fruit: str,
+        timeout: aiohttp.ClientTimeout,
+    ) -> list[str]:
+        """Pull images from the Wikipedia article for *fruit* (always on-topic)."""
+        async with session.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query",
+                "titles": fruit,
+                "prop": "images",
+                "imlimit": "30",
+                "format": "json",
+                "formatversion": "2",
+                "redirects": "1",
+            },
+            timeout=timeout,
+        ) as resp:
+            data = await resp.json()
+
+        pages = data.get("query", {}).get("pages", [])
+        if not pages or pages[0].get("missing"):
+            return []
+
+        titles = [
+            img["title"]
+            for img in pages[0].get("images", [])
+            if self._is_photo_title(img["title"])
+        ]
+        if not titles:
+            return []
+        return await self._urls_from_titles(session, titles, timeout)
+
+    async def _fetch_from_commons_search(
+        self,
+        session: aiohttp.ClientSession,
+        fruit: str,
+        timeout: aiohttp.ClientTimeout,
+    ) -> list[str]:
+        """Fallback: text-search Wikimedia Commons, filtering by filename."""
+        async with session.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={
+                "action": "query",
+                "generator": "search",
+                "gsrsearch": fruit,
+                "gsrnamespace": "6",
+                "gsrlimit": "50",
+                "prop": "imageinfo",
+                "iiprop": "url|mime",
+                "iiurlwidth": "800",
+                "format": "json",
+                "formatversion": "2",
+            },
+            timeout=timeout,
+        ) as resp:
+            data = await resp.json()
+
+        # Only keep files whose name contains at least one word from the fruit name
+        fruit_words = {w.lower() for w in fruit.split() if len(w) > 3}
+        photos = []
+        for page in data.get("query", {}).get("pages", []):
+            title = page.get("title", "").lower()
+            if not self._is_photo_title(title):
+                continue
+            if fruit_words and not any(w in title for w in fruit_words):
+                continue
+            for info in page.get("imageinfo", []):
+                if info.get("mime") not in ("image/jpeg", "image/png"):
+                    continue
+                url = info.get("thumburl") or info.get("url", "")
+                if url.startswith("http"):
+                    photos.append(url)
+        return photos
+
+    async def _fetch_images(self, fruit: str, max_count: int = 35) -> list[str]:
+        """Return up to *max_count* relevant photo URLs for *fruit*.
+
+        Tries Wikipedia article images first (editor-curated, always
+        on-topic), then falls back to a filename-filtered Commons search
+        for variety names that may not have their own Wikipedia page.
+        """
+        timeout = aiohttp.ClientTimeout(total=15)
+        headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                photos = await self._fetch_from_wikipedia(session, fruit, timeout)
+                if len(photos) < 5:
+                    fallback = await self._fetch_from_commons_search(
+                        session, fruit, timeout
+                    )
+                    # Merge, deduplicate, prefer Wikipedia results first
+                    seen = set(photos)
+                    for url in fallback:
+                        if url not in seen:
+                            seen.add(url)
+                            photos.append(url)
 
             random.shuffle(photos)
             return photos[:max_count]
