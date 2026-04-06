@@ -159,7 +159,7 @@ class FruitGuesser(commands.Cog):
         if ctx.channel.id in self.games:
             await ctx.send(
                 "A game is already running here! "
-                "Type your guess or `$hint` for another image."
+                "Type your guess or `$fhint` for another image."
             )
             return
 
@@ -179,7 +179,7 @@ class FruitGuesser(commands.Cog):
             title="What fruit is this?",
             description=(
                 "Type your guess in chat — anyone can answer!\n"
-                "You have **60 seconds**. Type `$hint` for clues *(3 max, last hint scrambles the name)*."
+                "You have **60 seconds**. Type `$fhint` for clues *(3 max, last hint scrambles the name)*."
             ),
             color=discord.Color.green(),
         )
@@ -187,7 +187,7 @@ class FruitGuesser(commands.Cog):
         await loading.edit(content=None, embed=embed)
 
     @commands.command()
-    async def hint(self, ctx: commands.Context):
+    async def fhint(self, ctx: commands.Context):
         """Get a clue for the current fruit guessing game (3 max; last hint scrambles the name)."""
         game = self.games.get(ctx.channel.id)
         if not game:
