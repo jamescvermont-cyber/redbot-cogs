@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Word Guesser — a definition is posted and the first person to type the correct word wins. No joining needed, anyone in chat can play.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]load wordguesser` to get started.",
+    "name": "WordGuesser",
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Guess the word from its definition",
+    "tags": ["game", "words", "trivia", "fun"]
+}
