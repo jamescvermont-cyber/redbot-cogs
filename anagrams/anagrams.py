@@ -24,6 +24,51 @@ def _load_dictionary() -> frozenset:
     return frozenset(base | {w.lower() for w in SLANG_WORDS})
 
 
+# Suffix rules: (suffix, fn(base) → list of candidate stems to check).
+# Ordered longest-first to avoid premature stripping.
+_SUFFIX_RULES = [
+    ("iness", lambda b: [b + "y"]),                                            # happiness → happy
+    ("ings",  lambda b: [b, b + "e"]),                                         # makings → make
+    ("iest",  lambda b: [b + "y"]),                                            # happiest → happy
+    ("ness",  lambda b: [b]),                                                  # sadness → sad
+    ("less",  lambda b: [b]),                                                  # homeless → home
+    ("ment",  lambda b: [b]),                                                  # movement → move
+    ("ful",   lambda b: [b]),                                                  # thankful → thank
+    ("ier",   lambda b: [b + "y"]),                                            # happier → happy
+    ("ied",   lambda b: [b + "y"]),                                            # carried → carry
+    ("ies",   lambda b: [b + "y"]),                                            # carries → carry
+    ("ily",   lambda b: [b + "y"]),                                            # heavily → heavy
+    ("ing",   lambda b: [b, b + "e"]                                           # mentioning→mention, making→make
+              + ([b[:-1]] if len(b) >= 2 and b[-1] == b[-2] else [])),        # running → run
+    ("ers",   lambda b: [b, b + "e"]),                                         # makers → make
+    ("est",   lambda b: [b, b + "e"]                                           # nicest → nice
+              + ([b[:-1]] if len(b) >= 2 and b[-1] == b[-2] else [])),
+    ("ed",    lambda b: [b, b + "e"]                                           # mentioned→mention, baked→bake
+              + ([b[:-1]] if len(b) >= 2 and b[-1] == b[-2] else [])),        # stopped → stop
+    ("er",    lambda b: [b, b + "e"]                                           # maker → make
+              + ([b[:-1]] if len(b) >= 2 and b[-1] == b[-2] else [])),        # runner → run
+    ("es",    lambda b: [b, b + "e"]),                                         # makes→make, boxes→box
+    ("ly",    lambda b: [b]),                                                  # quickly → quick
+    ("s",     lambda b: [b]),                                                  # mentions → mention
+]
+
+
+def _in_dictionary(word: str) -> bool:
+    """Return True if word or a common inflected form of it is in DICTIONARY."""
+    w = word.lower()
+    if w in DICTIONARY:
+        return True
+    for suffix, candidates_fn in _SUFFIX_RULES:
+        if w.endswith(suffix):
+            base = w[: -len(suffix)]
+            if len(base) < 2:
+                continue
+            for candidate in candidates_fn(base):
+                if candidate in DICTIONARY:
+                    return True
+    return False
+
+
 DICTIONARY: frozenset = _load_dictionary()
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
@@ -69,9 +114,10 @@ async def _find_emoji(guild: discord.Guild, name: str, fallback: str):
 
 class AnagramGame:
     def __init__(self, word: str, duration: int):
-        self.word     = word.upper()
-        self.jumbled  = _jumble(word)
-        self.duration = duration
+        self.word        = word.upper()
+        self.jumbled     = _jumble(word)
+        self.duration    = duration
+        self.guess_count = 0             # all attempts (valid or not), for letter reminders
         # word.upper() → (discord.Member, points_earned)
         self.found:  dict = {}
         # member.id  → {"points": int, "words": list[str], "member": Member}
@@ -81,8 +127,8 @@ class AnagramGame:
         return word.upper() in self.found
 
     def is_valid(self, word: str) -> bool:
-        """Word is in the dictionary and constructible from the source letters."""
-        return word.lower() in DICTIONARY and _can_make(word, self.word)
+        """Word is in the dictionary (or an accepted inflection) and constructible from the source letters."""
+        return _in_dictionary(word) and _can_make(word, self.word)
 
     def record(self, word: str, member: discord.Member) -> int:
         """Save a valid find and return the points awarded."""
@@ -235,6 +281,7 @@ class Anagrams(commands.Cog):
             return
 
         game = self.games[message.channel.id]
+        game.guess_count += 1
 
         # ── Word already found ────────────────────────────────────────────────
         if game.already_found(word):
@@ -243,45 +290,41 @@ class Anagrams(commands.Cog):
                 await message.add_reaction(emoji)
             except discord.HTTPException:
                 pass
-            return
-
-        # ── Not a valid anagram word ──────────────────────────────────────────
-        if not game.is_valid(word):
-            return
 
         # ── Valid find ────────────────────────────────────────────────────────
-        pts     = game.record(word, message.author)
-        is_full = word.upper() == game.word
+        elif game.is_valid(word):
+            pts     = game.record(word, message.author)
+            is_full = word.upper() == game.word
 
-        check = await _find_emoji(message.guild, "check", "✅")
-        try:
-            await message.add_reaction(check)
-        except discord.HTTPException:
-            pass
+            check = await _find_emoji(message.guild, "check", "✅")
+            try:
+                await message.add_reaction(check)
+            except discord.HTTPException:
+                pass
 
-        if is_full:
-            embed = discord.Embed(
-                title="🎊  Full Word Found!",
-                description=(
-                    f"{message.author.mention} cracked it — **{game.word}**!\n"
-                    f"That earns **{pts} points** "
-                    f"(word score + {FULL_WORD_BONUS} bonus)!"
-                ),
-                color=discord.Color.green(),
-            )
-            await message.channel.send(embed=embed)
-        else:
-            embed = discord.Embed(
-                description=(
-                    f"**{message.author.display_name}** found "
-                    f"**{word.upper()}** for **{pts} pts**"
-                ),
-                color=0x95a5a6,   # gray left border
-            )
-            await message.channel.send(embed=embed)
+            if is_full:
+                embed = discord.Embed(
+                    title="🎊  Full Word Found!",
+                    description=(
+                        f"{message.author.mention} cracked it — **{game.word}**!\n"
+                        f"That earns **{pts} points** "
+                        f"(word score + {FULL_WORD_BONUS} bonus)!"
+                    ),
+                    color=discord.Color.green(),
+                )
+                await message.channel.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    description=(
+                        f"**{message.author.display_name}** found "
+                        f"**{word.upper()}** for **{pts} pts**"
+                    ),
+                    color=0x95a5a6,   # gray left border
+                )
+                await message.channel.send(embed=embed)
 
-        # ── Repost letters every 8 valid finds ───────────────────────────────
-        if len(game.found) % 8 == 0:
+        # ── Repost letters every 6 guesses (valid or not) ────────────────────
+        if game.guess_count % 6 == 0:
             reminder = discord.Embed(
                 description=f"🔤  **Letters:** {' '.join(game.jumbled)}",
                 color=discord.Color.blurple(),
