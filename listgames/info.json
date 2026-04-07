@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Posts the list of games available on the server as a Discord embed.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]load listgames` to activate.",
+    "name": "ListGames",
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Post the server games list as an embed",
+    "tags": ["games", "utility"]
+}
