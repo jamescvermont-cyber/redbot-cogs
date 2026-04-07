@@ -96,24 +96,12 @@ class GoFast(commands.Cog):
                 "A challenge will appear each round.\n"
                 f"**First to {WIN_POINTS} points wins the game!**\n\n"
                 "Anyone can play — just type your answer in chat!\n"
-                "Use `$gofast end` to stop early, `$gofast skip` to skip a round."
+                "Use `$end` to stop early, `$gofast skip` to skip a round."
             ),
             color=discord.Color.blurple(),
         )
         await ctx.send(embed=embed)
         await self._start_round(session)
-
-    @gofast.command(name="end")
-    async def gofast_end(self, ctx: commands.Context):
-        """End the current GoFast session early."""
-        session = self.sessions.pop(ctx.channel.id, None)
-        if session is None:
-            await ctx.send("No GoFast session is running in this channel.")
-            return
-        session.active = False
-        if session.round_task:
-            session.round_task.cancel()
-        await self._announce_final(ctx.channel, session, ended_early=True)
 
     @gofast.command(name="skip")
     async def gofast_skip(self, ctx: commands.Context):
@@ -143,6 +131,18 @@ class GoFast(commands.Cog):
             await ctx.send("No GoFast session is running in this channel.")
             return
         await ctx.send(f"**Scores:** {session.scores_line()}")
+
+    # ── GameStop integration ──────────────────────────────────────────────────
+
+    async def force_stop_game(self, channel_id: int):
+        session = self.sessions.pop(channel_id, None)
+        if session is None:
+            return None
+        session.active = False
+        if session.round_task:
+            session.round_task.cancel()
+        await self._announce_final(session.channel, session, ended_early=True)
+        return "GoFast"
 
     # ── Round management ──────────────────────────────────────────────────────
 
