@@ -243,12 +243,16 @@ class RhymeDuel(commands.Cog):
             game.current_idx = random.randint(0, 1)
             game.phase = "playing"
 
-            await ctx.send(
-                f"⚔️ **Rhyme Duel!**{DEV_LABEL}\n"
-                f"Word to rhyme: **{game.target_word.upper()}**\n"
-                f"{game.current_player.mention} goes first! You have **{game.turn_time}s** per turn.\n"
-                f"No repeating rhymes. First one to time out loses!"
-            )
+            await ctx.send(embed=discord.Embed(
+                title=f"⚔️ Rhyme Duel!{DEV_LABEL}",
+                description=(
+                    f"Word to rhyme: **{game.target_word.upper()}**\n\n"
+                    f"{game.current_player.mention} goes first!\n"
+                    f"**{game.turn_time}s** per turn — no repeating rhymes.\n"
+                    f"First one to time out loses!"
+                ),
+                color=discord.Color.blurple(),
+            ))
 
             # ── Turn loop ──────────────────────────────────────────────────
             while game.phase == "playing":
@@ -259,11 +263,15 @@ class RhymeDuel(commands.Cog):
                     winner = game.other_player
                     wins = await self._record_win(winner)
                     noun = "duel" if wins == 1 else "duels"
-                    await ctx.send(
-                        f"⏰ {current.mention} ran out of time!\n"
-                        f"🏆 {winner.mention} wins the Rhyme Duel! "
-                        f"They've now won **{wins}** {noun}!"
-                    )
+                    await ctx.send(embed=discord.Embed(
+                        title="🏆 Rhyme Duel Over!",
+                        description=(
+                            f"⏰ {current.mention} ran out of time!\n\n"
+                            f"{winner.mention} wins the Rhyme Duel!\n"
+                            f"They've now won **{wins}** {noun}!"
+                        ),
+                        color=discord.Color.gold(),
+                    ))
                     break
 
                 # Swap turns
