@@ -1,4 +1,6 @@
-Game one will go here
-*Maybe It Will be formatted with bold* - Like this
-Anyways this is just a test
-Eventually I will provide descriptions for all games here
+Any game can be stopped by typing $end
+
+**$animalguesser aka $ag** - Shows a picture of an animal, first to guess it wins
+**$fruitguesser aka $fg** - Same as above but with fruit
+**$wordrush aka $wr** - Classic word rush, come up with word containing three letters (2 or more players)
+**$famouswords aka $fw** - Try to guess the missing word from a famous quote
