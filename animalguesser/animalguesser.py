@@ -1,8 +1,7 @@
 import asyncio
-import io
+import pathlib
 import random
 
-import aiohttp
 import discord
 from redbot.core import commands
 
@@ -44,7 +43,7 @@ ANIMALS = [
     # D
     "Deer", "Dhole", "Dingo", "Dolphin", "Donkey", "Duck", "Dugong",
     # E
-    "Eagle", "Eagle Ray", "Echidna", "Electric Eel", "Elephant", "Elk", "Emu",
+    "Eagle", "Echidna", "Electric Eel", "Elephant", "Elk", "Emu",
     # F
     "Falcon", "Ferret", "Finch", "Flamingo", "Flying Squirrel", "Fossa",
     "Fox", "Frigate Bird", "Frog",
@@ -107,8 +106,15 @@ ANIMALS = [
     "Yak", "Zebra",
 ]
 
+# ── Image library ─────────────────────────────────────────────────────────────
 
-# ── Game state ────────────────────────────────────────────────────────────────
+IMAGES_DIR = pathlib.Path(__file__).parent / "images"
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_WORD_COUNT_NAMES = {2: "Two", 3: "Three", 4: "Four", 5: "Five"}
+
 
 def _scramble(name: str) -> str:
     """Scramble each word in the animal name independently."""
@@ -121,17 +127,28 @@ def _scramble(name: str) -> str:
     return " ".join(scrambled)
 
 
-class AnimalGame:
-    MAX_HINTS = 4
+def _build_first_hint(animal: str) -> str:
+    """Return the first hint string: first letter, letter count, word count."""
+    words = animal.split()
+    first_letter = animal[0].upper()
+    letter_count = sum(len(w) for w in words)
+    line = f"Starts with letter **{first_letter}** and is **{letter_count}** letters long"
+    if len(words) > 1:
+        word_label = _WORD_COUNT_NAMES.get(len(words), str(len(words)))
+        line += f"\n{word_label} words"
+    return line
 
+
+# ── Game state ────────────────────────────────────────────────────────────────
+
+class AnimalGame:
     def __init__(self, animal: str, images: list, task: asyncio.Task):
         self.animal = animal
-        self.images = images          # list of image URLs fetched up front
-        self.used: set = set()        # indices already shown this round
-        self.hints_used = 0
+        self.images = images          # list[pathlib.Path]
+        self.used: set = set()
         self.task = task
 
-    def pop_image(self) -> str | None:
+    def pop_image(self) -> "pathlib.Path | None":
         if not self.images:
             return None
         unused = [i for i in range(len(self.images)) if i not in self.used]
@@ -143,79 +160,121 @@ class AnimalGame:
         return self.images[idx]
 
 
-# ── Hint button ───────────────────────────────────────────────────────────────
+# ── Game view (two buttons + hint timer) ─────────────────────────────────────
 
-class AnimalHintView(discord.ui.View):
-    """Single-use green Hint button. Disables itself when clicked, then sends
-    the next hint as a followup (with a fresh button if hints remain)."""
+class AnimalGameView(discord.ui.View):
+    MAX_NEXT_IMAGES = 3   # how many extra images the button can reveal
 
     def __init__(self, cog: "AnimalGuesser", channel_id: int):
-        super().__init__(timeout=70)   # slightly longer than the 60-s game timer
+        super().__init__(timeout=75)
         self.cog = cog
         self.channel_id = channel_id
-        self._used = False
+        self.next_image_uses = 0
+        self.hint_stage = 0           # 0 = none used, 1 = first given, 2 = both given
+        self.message: "discord.Message | None" = None
+        self._hint_task: "asyncio.Task | None" = None
+        # Hint starts locked; unlocks after 20 s
+        self.hint_btn.disabled = True
 
-    @discord.ui.button(label="Hint", style=discord.ButtonStyle.success)
-    async def hint_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self._used:
-            await interaction.response.send_message(
-                "Use the most recent Hint button!", ephemeral=True
-            )
+    # ── Timer ──────────────────────────────────────────────────────────────────
+
+    def start_hint_timer(self):
+        self._hint_task = asyncio.create_task(self._enable_hint_after_delay())
+
+    async def _enable_hint_after_delay(self):
+        await asyncio.sleep(20)
+        game = self.cog.games.get(self.channel_id)
+        if not game or self.hint_stage >= 2 or not self.message:
             return
+        self.hint_btn.disabled = False
+        try:
+            await self.message.edit(view=self)
+        except Exception:
+            pass
 
+    # ── Timeout cleanup ────────────────────────────────────────────────────────
+
+    async def on_timeout(self):
+        if self._hint_task:
+            self._hint_task.cancel()
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+    # ── Next Image button ──────────────────────────────────────────────────────
+
+    @discord.ui.button(label="Next Image", style=discord.ButtonStyle.primary)
+    async def next_image_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         game = self.cog.games.get(self.channel_id)
         if not game:
-            await interaction.response.send_message(
-                "This game has already ended.", ephemeral=True
-            )
-            return
-        if game.hints_used >= AnimalGame.MAX_HINTS:
-            await interaction.response.send_message(
-                f"All **{AnimalGame.MAX_HINTS}** hints have been used — keep guessing!",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("This game has already ended.", ephemeral=True)
             return
 
-        self._used = True
-        button.disabled = True
-        game.hints_used += 1
-        remaining = AnimalGame.MAX_HINTS - game.hints_used
-        footer = f"{remaining} hint(s) remaining." if remaining else "No more hints after this!"
-        is_final = game.hints_used == AnimalGame.MAX_HINTS
+        path = game.pop_image()
+        if path is None:
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            return
 
-        # Disable this button on the current message first
+        self.next_image_uses += 1
+        remaining = self.MAX_NEXT_IMAGES - self.next_image_uses
+        if self.next_image_uses >= self.MAX_NEXT_IMAGES:
+            button.disabled = True
+
+        embed = discord.Embed(
+            title=f"Another look! ({self.next_image_uses}/{self.MAX_NEXT_IMAGES})",
+            description=(
+                f"{remaining} more image(s) available."
+                if remaining > 0 else "That's all the extra images!"
+            ),
+            color=discord.Color.blue(),
+        )
+        embed.set_image(url="attachment://animal.jpg")
+
         await interaction.response.edit_message(view=self)
+        await interaction.followup.send(
+            embed=embed,
+            file=discord.File(path, filename="animal.jpg"),
+        )
 
-        if is_final:
+    # ── Hint button ────────────────────────────────────────────────────────────
+
+    @discord.ui.button(label="Hint", style=discord.ButtonStyle.success, disabled=True)
+    async def hint_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        game = self.cog.games.get(self.channel_id)
+        if not game:
+            await interaction.response.send_message("This game has already ended.", ephemeral=True)
+            return
+
+        button.disabled = True
+        self.hint_stage += 1
+
+        if self.hint_stage == 1:
             embed = discord.Embed(
-                title=f"Hint {game.hints_used}/{AnimalGame.MAX_HINTS} — Final Hint!",
-                description=f"The animal name scrambled: **{_scramble(game.animal)}**",
-                color=discord.Color.red(),
-            )
-            embed.set_footer(text=footer)
-            await interaction.followup.send(embed=embed)
-        else:
-            embed = discord.Embed(
-                title=f"Hint {game.hints_used}/{AnimalGame.MAX_HINTS}",
-                description="Here's another look!",
+                title="Hint 1 of 2",
+                description=_build_first_hint(game.animal),
                 color=discord.Color.gold(),
             )
-            hint_url = game.pop_image()
-            img_data = await self.cog._download_image(hint_url)
-            embed.set_footer(text=footer)
-            if img_data:
-                embed.set_image(url="attachment://hint.jpg")
-                await interaction.followup.send(
-                    embed=embed,
-                    file=discord.File(io.BytesIO(img_data), filename="hint.jpg"),
-                    view=AnimalHintView(self.cog, self.channel_id),
-                )
-            else:
-                embed.set_image(url=hint_url)
-                await interaction.followup.send(
-                    embed=embed,
-                    view=AnimalHintView(self.cog, self.channel_id),
-                )
+            embed.set_footer(text="Hint 2 unlocks in 20 seconds...")
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(embed=embed)
+            # Schedule unlock for second hint
+            self._hint_task = asyncio.create_task(self._enable_hint_after_delay())
+
+        else:  # hint_stage == 2 — final hint
+            embed = discord.Embed(
+                title="Hint 2 of 2 — Final Hint!",
+                description=f"Scrambled: **{_scramble(game.animal)}**",
+                color=discord.Color.orange(),
+            )
+            embed.set_footer(text="No more hints — good luck!")
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(embed=embed)
+            # Button stays disabled; no further timer needed
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
@@ -227,72 +286,16 @@ class AnimalGuesser(commands.Cog):
         self.bot = bot
         self.games: dict[int, AnimalGame] = {}   # channel_id → AnimalGame
 
-    # ── Image fetching ────────────────────────────────────────────────────────
+    # ── Image loading ─────────────────────────────────────────────────────────
 
-    async def _fetch_images(self, animal: str, max_count: int = 35) -> list[str]:
-        """Return up to *max_count* photo URLs from the iNaturalist API.
-
-        Two-step approach: first resolve the animal name to an exact taxon
-        ID, then fetch research-grade observations for that specific taxon.
-        This prevents mixing species when a common name maps to a broad
-        group (e.g. 'Eagle' covers 68 species) and eliminates misidentified
-        community observations.
-        """
-        timeout = aiohttp.ClientTimeout(total=15)
-        headers = {"User-Agent": "AnimalGuesserBot/1.0 (Discord Bot)"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                # Step 1: resolve name → taxon_id
-                async with session.get(
-                    "https://api.inaturalist.org/v1/taxa",
-                    params={"q": animal, "per_page": 1},
-                    timeout=timeout,
-                ) as resp:
-                    taxa_data = await resp.json()
-
-                taxa_results = taxa_data.get("results", [])
-                if not taxa_results:
-                    return []
-                taxon_id = taxa_results[0]["id"]
-
-                # Step 2: fetch research-grade observations for that exact taxon
-                async with session.get(
-                    "https://api.inaturalist.org/v1/observations",
-                    params={
-                        "taxon_id": taxon_id,
-                        "photos": "true",
-                        "per_page": 35,
-                        "order_by": "votes",
-                        "quality_grade": "research",
-                    },
-                    timeout=timeout,
-                ) as resp:
-                    obs_data = await resp.json()
-
-            photos = []
-            for obs in obs_data.get("results", []):
-                for p in obs.get("photos", []):
-                    url = p.get("url", "").replace("square", "medium")
-                    if url.startswith("http"):
-                        photos.append(url)
-
-            random.shuffle(photos)
-            return photos[:max_count]
-        except Exception:
+    def _load_images(self, animal: str) -> list:
+        """Return a shuffled list of image Paths from the animal's folder."""
+        folder = IMAGES_DIR / animal
+        if not folder.is_dir():
             return []
-
-    async def _download_image(self, url: str) -> bytes | None:
-        """Download an image URL and return its bytes, or None on failure."""
-        timeout = aiohttp.ClientTimeout(total=10)
-        headers = {"User-Agent": "AnimalGuesserBot/1.0 (Discord Bot)"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=timeout) as resp:
-                    if resp.status == 200:
-                        return await resp.read()
-        except Exception:
-            pass
-        return None
+        paths = [p for p in folder.iterdir() if p.suffix.lower() in _IMAGE_EXTS and p.is_file()]
+        random.shuffle(paths)
+        return paths
 
     # ── Timer ─────────────────────────────────────────────────────────────────
 
@@ -310,7 +313,7 @@ class AnimalGuesser(commands.Cog):
         embed = discord.Embed(
             title="Time's up!",
             description=f"Nobody guessed it. The animal was **{animal}**.",
-            color=discord.Color(0x99aab5),   # Discord greyple
+            color=discord.Color(0x99aab5),
         )
         await channel.send(embed=embed)
 
@@ -320,45 +323,49 @@ class AnimalGuesser(commands.Cog):
     async def animalguesser(self, ctx: commands.Context):
         """Start an animal guessing game. 60 seconds — can you name it?"""
         if ctx.channel.id in self.games:
-            await ctx.send(
-                "A game is already running here! "
-                "Type your guess or `$hint` for another image."
-            )
+            await ctx.send("A game is already running here! Type your guess in chat.")
             return
 
-        animal = random.choice(ANIMALS)
-        loading = await ctx.send("Searching for images...")
+        # Pick a random animal that has local images downloaded
+        animal, images = None, []
+        for candidate in random.sample(ANIMALS, len(ANIMALS)):
+            imgs = self._load_images(candidate)
+            if imgs:
+                animal, images = candidate, imgs
+                break
 
-        images = await self._fetch_images(animal)
-        if not images:
-            await loading.edit(content="Couldn't fetch images right now. Please try again!")
+        if animal is None:
+            await ctx.send(
+                "No animal images found on disk. "
+                "Run `python animalguesser/download_images.py` to download the image library first."
+            )
             return
 
         task = asyncio.create_task(self._game_timer(ctx.channel, animal))
         game = AnimalGame(animal, images, task)
         self.games[ctx.channel.id] = game
 
+        game_view = AnimalGameView(self, ctx.channel.id)
+
         embed = discord.Embed(
             title=f"What animal is this?{DEV_LABEL}",
             description=(
                 "Type your guess in chat — anyone can answer!\n"
-                "You have **60 seconds**. Use the **Hint** button below *(4 max, last hint scrambles the name)*."
+                "You have **60 seconds**."
             ),
             color=discord.Color.blurple(),
         )
-        image_url = game.pop_image()
-        img_data = await self._download_image(image_url)
-        await loading.delete()
-        if img_data:
-            embed.set_image(url="attachment://animal.jpg")
-            await ctx.send(
-                embed=embed,
-                file=discord.File(io.BytesIO(img_data), filename="animal.jpg"),
-                view=AnimalHintView(self, ctx.channel.id),
-            )
-        else:
-            embed.set_image(url=image_url)
-            await ctx.send(embed=embed, view=AnimalHintView(self, ctx.channel.id))
+        embed.set_footer(text="Next Image: up to 3 extra photos  |  Hint unlocks after 20 seconds")
+        embed.set_image(url="attachment://animal.jpg")
+
+        first_image = game.pop_image()
+        msg = await ctx.send(
+            embed=embed,
+            file=discord.File(first_image, filename="animal.jpg"),
+            view=game_view,
+        )
+        game_view.message = msg
+        game_view.start_hint_timer()
 
     # ── Guess listener ────────────────────────────────────────────────────────
 
