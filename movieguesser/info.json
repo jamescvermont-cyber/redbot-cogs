@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Movie Guesser — a short plot synopsis is posted and the first person to type the correct movie title wins. Hints reveal the cast and a scrambled title over 60 seconds.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "install_msg": "Run `[p]load movieguesser` to get started.",
+    "name": "MovieGuesser",
+    "required_cogs": {},
+    "requirements": [],
+    "short": "Guess the movie from its plot synopsis",
+    "tags": ["game", "movies", "trivia", "fun"]
+}
