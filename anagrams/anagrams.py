@@ -331,8 +331,8 @@ class Anagrams(commands.Cog):
                 )
                 await message.channel.send(embed=embed)
 
-        # ── Repost letters every 6 guesses (valid or not) ────────────────────
-        if game.guess_count % 6 == 0:
+        # ── Repost letters every 4 guesses (valid or not) ────────────────────
+        if game.guess_count % 4 == 0:
             reminder = discord.Embed(
                 description=f"🔤  **Letters:** {' '.join(game.jumbled)}",
                 color=discord.Color.blurple(),
