@@ -58,11 +58,11 @@ class LongWordChallenge(BaseChallenge):
     key = "long_word"
 
     def generate(self):
-        return {}, "Type any valid English word with **more than 15 letters**!"
+        return {}, "Type any valid English word with **more than 12 letters**!"
 
     def validate(self, answer, params):
         w = answer.strip().lower()
-        return len(w) > 15 and w.isalpha() and w in DICTIONARY
+        return len(w) > 12 and w.isalpha() and w in DICTIONARY
 
 
 # ── Game 2: Country starting with [letter] ───────────────────────────────────
