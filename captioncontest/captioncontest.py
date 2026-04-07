@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import aiohttp
 import discord
+from discord import ui
 from redbot.core import commands
 from redbot.core.bot import Red
 
@@ -101,10 +102,76 @@ SCENARIOS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# UI: Modal + Button View
+# ---------------------------------------------------------------------------
+
+class SubmitCaptionModal(ui.Modal, title="Submit Your Caption"):
+    caption_input = ui.TextInput(
+        label="Your caption",
+        placeholder="Write your caption here...",
+        max_length=MAX_CAPTION_LEN,
+        style=discord.TextStyle.paragraph,
+    )
+
+    def __init__(self, cog: "CaptionContest", guild_id: int):
+        super().__init__()
+        self.cog = cog
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        game = self.cog._games.get(self.guild_id)
+        if not game or game["phase"] != "submitting":
+            await interaction.response.send_message("Submissions are closed!", ephemeral=True)
+            return
+
+        uid = interaction.user.id
+        captions = game["captions"]
+        text = self.caption_input.value.strip()
+
+        if uid not in captions and len(captions) >= MAX_CAPTIONS:
+            await interaction.response.send_message(
+                f"Maximum captions ({MAX_CAPTIONS}) already reached!", ephemeral=True
+            )
+            return
+
+        updating = uid in captions
+        captions[uid] = text
+
+        verb = "updated" if updating else "submitted"
+        await interaction.response.send_message(
+            f"Caption {verb}! You can update it by clicking the button again.",
+            ephemeral=True,
+        )
+        await interaction.channel.send(
+            f"{interaction.user.mention} {verb} a caption! ({len(captions)} total)",
+            delete_after=8,
+        )
+
+
+class SubmitCaptionView(ui.View):
+    def __init__(self, cog: "CaptionContest", guild_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild_id = guild_id
+
+    @ui.button(label="Submit Caption", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def submit_btn(self, interaction: discord.Interaction, button: ui.Button):
+        game = self.cog._games.get(self.guild_id)
+        if not game or game["phase"] != "submitting":
+            await interaction.response.send_message("Submissions are closed!", ephemeral=True)
+            return
+        await interaction.response.send_modal(SubmitCaptionModal(self.cog, self.guild_id))
+
+
+# ---------------------------------------------------------------------------
+# Cog
+# ---------------------------------------------------------------------------
+
 class CaptionContest(commands.Cog):
     """Caption Contest — a cartoon is generated and players compete for the best caption."""
 
-    SUBMIT_SECONDS = 180  # 3 minutes to submit
+    SUBMIT_SECONDS = 60   # 1 minute to submit
     VOTE_SECONDS = 90     # 90 seconds to vote
 
     def __init__(self, bot: Red):
@@ -117,6 +184,9 @@ class CaptionContest(commands.Cog):
                 t = game.get(key)
                 if t:
                     t.cancel()
+            v = game.get("submit_view")
+            if v:
+                v.stop()
 
     # ------------------------------------------------------------------
     # Image generation
@@ -157,6 +227,28 @@ class CaptionContest(commands.Cog):
         await asyncio.sleep(self.VOTE_SECONDS)
         await self._finish_game(guild_id)
 
+    async def _disable_submit_button(self, game: dict):
+        """Edit the submit message to show a disabled closed button."""
+        ch = self.bot.get_channel(game["channel_id"])
+        msg_id = game.get("submit_message_id")
+        view = game.get("submit_view")
+        if view:
+            view.stop()
+        if ch and msg_id:
+            try:
+                msg = await ch.fetch_message(msg_id)
+                closed_view = ui.View()
+                btn = ui.Button(
+                    label="Submissions Closed",
+                    style=discord.ButtonStyle.secondary,
+                    emoji="🔒",
+                    disabled=True,
+                )
+                closed_view.add_item(btn)
+                await msg.edit(view=closed_view)
+            except Exception:
+                pass
+
     async def _begin_voting(self, guild_id: int):
         game = self._games.get(guild_id)
         if not game:
@@ -165,6 +257,8 @@ class CaptionContest(commands.Cog):
         if not ch:
             self._games.pop(guild_id, None)
             return
+
+        await self._disable_submit_button(game)
 
         captions = game["captions"]
         if len(captions) < 2:
@@ -210,7 +304,7 @@ class CaptionContest(commands.Cog):
             await ch.send("No captions were submitted. Game over.")
             return
 
-        # Tally votes from reactions, excluding bot reactions and self-votes
+        # Tally votes from reactions, excluding bot and self-votes
         vote_counts = {uid: 0 for uid, _ in caption_list}
         vote_msg_id = game.get("vote_message_id")
         if vote_msg_id:
@@ -228,7 +322,7 @@ class CaptionContest(commands.Cog):
                         if user.bot:
                             continue
                         if user.id == author_id:
-                            continue  # no self-votes
+                            continue  # self-votes excluded (also removed in real time)
                         vote_counts[author_id] += 1
             except Exception:
                 pass
@@ -260,6 +354,48 @@ class CaptionContest(commands.Cog):
         await ch.send(embed=embed)
 
     # ------------------------------------------------------------------
+    # Listeners
+    # ------------------------------------------------------------------
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        """Remove self-votes immediately when a player reacts to their own caption."""
+        if payload.user_id == self.bot.user.id:
+            return
+        if not payload.guild_id:
+            return
+
+        game = self._games.get(payload.guild_id)
+        if not game or game["phase"] != "voting":
+            return
+        if payload.message_id != game.get("vote_message_id"):
+            return
+
+        emoji_str = str(payload.emoji)
+        if emoji_str not in NUMBER_EMOJIS:
+            return
+
+        idx = NUMBER_EMOJIS.index(emoji_str)
+        caption_list = game.get("caption_list", [])
+        if idx >= len(caption_list):
+            return
+
+        author_id = caption_list[idx][0]
+        if payload.user_id != author_id:
+            return  # not a self-vote
+
+        ch = self.bot.get_channel(payload.channel_id)
+        if not ch:
+            return
+        try:
+            msg = await ch.fetch_message(payload.message_id)
+            member = ch.guild.get_member(payload.user_id)
+            if member:
+                await msg.remove_reaction(payload.emoji, member)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
 
@@ -282,8 +418,10 @@ class CaptionContest(commands.Cog):
             "host_id": ctx.author.id,
             "image_url": None,
             "phase": "submitting",
-            "captions": {},       # user_id -> caption text
-            "caption_list": None, # set during voting: [(uid, text), ...]
+            "captions": {},
+            "caption_list": None,
+            "submit_message_id": None,
+            "submit_view": None,
             "vote_message_id": None,
             "submit_task": None,
             "vote_task": None,
@@ -309,15 +447,19 @@ class CaptionContest(commands.Cog):
             title="Caption Contest!",
             description=(
                 f"{hint}\n\n"
-                f"Submit your caption: `$caption <your caption>`\n"
-                f"You have **{self.SUBMIT_SECONDS // 60} minutes**. Captions are anonymous until the reveal."
+                f"Click the button to submit your caption.\n"
+                f"You have **{self.SUBMIT_SECONDS} seconds**. Captions are anonymous until the reveal."
             ),
             color=discord.Color.blurple(),
         )
         embed.set_image(url=url)
 
+        view = SubmitCaptionView(self, gid)
+        self._games[gid]["submit_view"] = view
+
         await wait_msg.delete()
-        await ctx.send(embed=embed)
+        submit_msg = await ctx.send(embed=embed, view=view)
+        self._games[gid]["submit_message_id"] = submit_msg.id
 
         self._games[gid]["submit_task"] = asyncio.create_task(
             self._submit_timeout(gid)
@@ -360,55 +502,3 @@ class CaptionContest(commands.Cog):
             await ctx.send(f"{n} caption{'s' if n != 1 else ''} submitted so far.")
         else:
             await ctx.send("Voting is in progress.")
-
-    @commands.command(name="caption")
-    @commands.guild_only()
-    async def submit_caption(self, ctx: commands.Context, *, caption: str):
-        """Submit your caption for the current contest."""
-        gid = ctx.guild.id
-        game = self._games.get(gid)
-
-        # Ignore silently if no game or wrong channel
-        if not game or game["channel_id"] != ctx.channel.id:
-            return
-
-        if game["phase"] != "submitting":
-            await ctx.message.add_reaction("❌")
-            return
-
-        if len(caption) > MAX_CAPTION_LEN:
-            await ctx.send(
-                f"{ctx.author.mention} Caption too long (max {MAX_CAPTION_LEN} chars).",
-                delete_after=8,
-            )
-            return
-
-        uid = ctx.author.id
-        captions = game["captions"]
-
-        if uid not in captions and len(captions) >= MAX_CAPTIONS:
-            await ctx.send(
-                f"{ctx.author.mention} Maximum captions reached ({MAX_CAPTIONS}).",
-                delete_after=8,
-            )
-            return
-
-        updating = uid in captions
-        captions[uid] = caption
-
-        # Try to delete the submission message to keep captions secret
-        try:
-            await ctx.message.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass
-
-        if updating:
-            await ctx.send(
-                f"{ctx.author.mention} updated their caption. ({len(captions)} total)",
-                delete_after=8,
-            )
-        else:
-            await ctx.send(
-                f"{ctx.author.mention} submitted a caption! ({len(captions)} total)",
-                delete_after=8,
-            )
