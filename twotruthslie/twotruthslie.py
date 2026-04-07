@@ -501,3 +501,11 @@ class TwoTruthsLie(commands.Cog):
             return
         session.phase = "done"
         await ctx.send("Game ended.")
+
+    async def force_stop_game(self, channel_id: int) -> str | None:
+        """Called by the GameStop cog's $end command."""
+        session = self.sessions.pop(channel_id, None)
+        if session is None:
+            return None
+        session.phase = "done"
+        return "Two Truths and a Lie"
