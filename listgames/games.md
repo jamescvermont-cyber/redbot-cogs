@@ -1,10 +1,13 @@
 Any game can be stopped by typing $end
 
+Anagrams - [$an] - a 7-11 letter word is scrambled and people rush to find words in the letters
 
-##Word Guesser## - [$wg] - a definition of a somewhat common word is shown and first to guess the word wins.
 
 
-##Rhyme Duel## - [$rd @user] - challenge someone to a rhyme duel. a word is posted and game goes back and forth until someone cant think of a rhyme.
+Word Guesser - [$wg] - a definition of a somewhat common word is shown and first to guess the word wins.
+
+
+Rhyme Duel - [$rd @user] - challenge someone to a rhyme duel. a word is posted and game goes back and forth until someone cant think of a rhyme.
 
 
 

@@ -1,0 +1,2 @@
+- if user ends message with ! exclamation just make changes with no explanations
+- after making changes always commit and push to github, no confirmation needed
