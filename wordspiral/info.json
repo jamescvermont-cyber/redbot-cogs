@@ -1,0 +1,12 @@
+{
+    "author": ["jamescvermont-cyber"],
+    "description": "Multiplayer Word Spiral game. The bot posts a starting word; each player must type a valid word containing the last 3 letters of the previous word before time runs out. Fail to answer and those same 3 letters pass to the next player. Lose all your lives and you're eliminated — last one standing wins!",
+    "end_user_data_statement": "This cog stores win/game statistics per user per guild.",
+    "hidden": false,
+    "install_msg": "Run `[p]pipinstall english-words` then `[p]load wordspiral`. Requires the wordrush cog to also be installed (shares its word lists).",
+    "name": "WordSpiral",
+    "required_cogs": {"wordrush": "Shares slang and proper noun word lists"},
+    "requirements": ["english-words"],
+    "short": "Chain words using the last 3 letters of the previous word",
+    "tags": ["game", "words", "multiplayer", "fun", "competitive"]
+}
