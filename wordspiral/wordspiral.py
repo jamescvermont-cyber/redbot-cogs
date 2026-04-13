@@ -260,6 +260,15 @@ class WordSpiral(commands.Cog):
         await self.config.lives.set(lives)
         await ctx.send(f"Word Spiral lives set to **{lives}** globally.")
 
+    async def force_stop_game(self, channel_id: int):
+        """Stop any active game in channel_id. Returns game name if stopped, else None."""
+        game = self.games.pop(channel_id, None)
+        if game is None:
+            return None
+        if game.game_task:
+            game.game_task.cancel()
+        return "Word Spiral"
+
     # ── Game runner ───────────────────────────────────────────────────────────
 
     async def _run_game(self, ctx: commands.Context, game: WordSpiralGame):
