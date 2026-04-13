@@ -70,7 +70,7 @@ FRUITS = [
 IMAGES_PER_FRUIT = 15
 SKIP_THRESHOLD = 5        # skip folder if already has >= this many images
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-DELAY_BETWEEN_FRUITS = 2  # seconds between fruits
+DELAY_BETWEEN_FRUITS = 6  # seconds between fruits (DDG rate limit protection)
 DOWNLOAD_WORKERS = 8       # parallel image downloads per fruit
 DOWNLOAD_TIMEOUT = 20      # seconds per image download
 
