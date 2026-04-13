@@ -75,8 +75,8 @@ def load_people() -> list[str]:
             continue
         if "**" in line or line == "--":
             continue
-        # Must start with a letter
-        if not line[0].isalpha():
+        # Must start with an uppercase letter (all real names do; junk lines don't)
+        if not line[0].isupper():
             continue
         names.append(line)
     return names
