@@ -96,7 +96,7 @@ class GoFast(commands.Cog):
                 "A challenge will appear each round.\n"
                 f"**First to {WIN_POINTS} points wins the game!**\n\n"
                 "Anyone can play — just type your answer in chat!\n"
-                "Use `$gofast end` or `$end` to stop early, `$gofast skip` to skip a round."
+                "Use `$end` to stop early, `$gofast skip` to skip a round."
             ),
             color=discord.Color.blurple(),
         )
