@@ -156,23 +156,22 @@ class Trivia(commands.Cog):
                 game.answer_event.clear()
                 game.correct_guesser = None
 
-                embed = discord.Embed(
-                    title=f"Question {i + 1} out of {game.total}",
-                    description=display_q,
-                    color=discord.Color.blue(),
-                )
-                embed.set_footer(text=f"⏱ {q_time}s")
-                msg = await ctx.send(embed=embed)
+                def _q_text(remaining: int) -> str:
+                    return (
+                        f"-# Question {i + 1} out of {game.total}  ·  ⏱ {remaining}s\n"
+                        f"# {display_q}"
+                    )
 
-                # Countdown — update embed every second
+                msg = await ctx.send(_q_text(q_time))
+
+                # Countdown — update message every second
                 for remaining in range(q_time - 1, -1, -1):
                     try:
                         await asyncio.wait_for(game.answer_event.wait(), timeout=1.0)
                         break
                     except asyncio.TimeoutError:
                         with suppress(discord.HTTPException):
-                            embed.set_footer(text=f"⏱ {remaining}s")
-                            await msg.edit(embed=embed)
+                            await msg.edit(content=_q_text(remaining))
 
                 if game.phase == "ended":
                     break
