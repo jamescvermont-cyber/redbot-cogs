@@ -133,9 +133,9 @@ class MovieGuesser(commands.Cog):
     @commands.command(name="movieguesser", aliases=["mg", "movie"])
     async def movieguesser(self, ctx: commands.Context):
         """Start a Movie Guesser round. First to type the correct movie title wins!"""
-        existing = self.games.pop(ctx.channel.id, None)
-        if existing and existing.task:
-            existing.task.cancel()
+        if ctx.channel.id in self.games:
+            await ctx.send("A game is already in progress in this channel!")
+            return
 
         data = random.choice(MOVIES)
         game = MovieGame(
