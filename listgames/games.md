@@ -1,4 +1,4 @@
-Any game can be stopped by typing $end
+Stop any game early - $end
 
 Anagrams - [$an] - a longish word is scrambled and people rush to find words in the letters
 
