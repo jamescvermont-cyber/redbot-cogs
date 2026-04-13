@@ -15,7 +15,7 @@ STATE_FILE = DATA_PATH / "state.json"
 COMPLIMENTS_FILE = DATA_PATH / "Random Compliments.txt"
 INSULTS_FILE = DATA_PATH / "Random Insults.txt"
 
-DEFAULT_TIME = 26
+DEFAULT_TIME = 30
 DEFAULT_QUESTIONS = 100
 
 def _format_blank(answer: str) -> str:
