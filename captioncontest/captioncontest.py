@@ -1,11 +1,13 @@
 import asyncio
+import hashlib
 import random
+import time
 from urllib.parse import quote
 
 import aiohttp
 import discord
 from discord import ui
-from redbot.core import commands
+from redbot.core import Config, commands
 from redbot.core.bot import Red
 
 
@@ -70,6 +72,58 @@ SCENARIOS = [
     ("a cat sitting across from a job interviewer, resume on the desk lists 'knocking things off shelves' under relevant experience", "speaker"),
     ("a life coach writing 'STEP 1: TRY' on a whiteboard to a single deeply unimpressed turtle seated in a folding chair", "speaker"),
     ("a dragon in a tiny office cubicle, fire suppression system going off above it, dragon looking guilty", "speaker"),
+    ("a skeleton at a pharmacy counter trying to fill a prescription for calcium supplements, pharmacist looking skeptical", "speaker"),
+    ("an octopus at a job interview struggling to shake hands with the interviewer, papers flying everywhere", "speaker"),
+    ("a tiny fairy godmother reading her performance review, her supervisor tapping on a chart labeled 'Wishes Granted Per Quarter'", "speaker"),
+    ("a robot at a wine tasting, swirling and sniffing the glass with mechanical precision, sommelier raising an eyebrow", "speaker"),
+    ("a zombie in a real estate agent's office, agent presenting fixer-upper listings with great enthusiasm", "speaker"),
+    ("a mole at an eye doctor, the doctor gesturing to the very blurry letter chart, mole squinting desperately", "speaker"),
+    ("Poseidon at a city pool board meeting, dripping wet, explaining something to very dry and uncomfortable trustees", "speaker"),
+    ("a cloud on a psychiatrist's couch explaining its complicated feelings about sunshine", "speaker"),
+    ("Hercules filing a workers' compensation claim at a small government office window, enormous stack of forms in hand", "speaker"),
+    ("the Easter Bunny at an accountant's office during tax season, surrounded by cartons of receipts for eggs and baskets", "speaker"),
+    ("an enormous troll trying to squeeze through a tiny door labeled 'Human Resources'", "speaker"),
+    ("a very formal butler presenting a single small rock on a silver tray to an unimpressed cat", "speaker"),
+    ("a knight in full armor in a modern spin class, instructor pointing firmly at the resistance dial", "speaker"),
+    ("a groundhog in a suit testifying before a congressional committee, senators leaning forward with urgent questions", "speaker"),
+    ("a fairy at the TSA security checkpoint, wand confiscated in a bin, fairy looking extremely put out", "speaker"),
+    ("a cyclops at an optometrist, only one lens on the trial frame, doctor making careful notes", "speaker"),
+    ("a werewolf at a dog groomer being told to sit still, groomer holding scissors very nervously", "speaker"),
+    ("a leprechaun at a gold exchange window, a very long skeptical line forming behind him", "speaker"),
+    ("a time-traveler from the past at a modern gym, utterly confused by the equipment, personal trainer gesturing helpfully", "speaker"),
+    ("Medusa at a photo studio for a headshot, photographer setting up nervously behind a large polished shield", "speaker"),
+    ("a very nervous squirrel presenting its financial plan to a skeptical bank loan officer", "speaker"),
+    ("a tooth fairy with a briefcase full of teeth arguing with a dentist about fair market pricing", "speaker"),
+    ("a kraken at the DMV attempting to fill out a boat registration form with one tentacle, clerk watching helplessly", "speaker"),
+    ("two robots on a first date at a restaurant, one reading the menu with a visible error message on its face", "speaker"),
+    ("Santa's elf presenting its resignation letter across a desk to a stunned Santa at the North Pole HR office", "speaker"),
+    ("a genie sitting across from a financial advisor, lamp on the desk between them, discussing wish portfolio diversification", "speaker"),
+    ("a phoenix at an insurance office, agent surrounded by enormous 'PRIOR CLAIM' folders stacked to the ceiling", "speaker"),
+    ("a dragon in traffic school seated at a tiny desk, instructor pointing at a 'NO OPEN FLAMES' sign", "speaker"),
+    ("Death waiting in an extremely long line at the DMV, scythe resting on the counter, clerk waving him forward", "speaker"),
+    ("a minotaur in an escape room, staff watching nervously through the one-way mirror as the clock runs down", "speaker"),
+    ("a goblin at a pawn shop trying to sell a large pile of suspiciously identical gold coins, owner squinting", "speaker"),
+    ("a griffin at a car rental counter, agent struggling to find an appropriate vehicle class on the computer", "speaker"),
+    ("a centaur at a tailor shop, tailor on knees measuring the horse half with a measuring tape, looking overwhelmed", "speaker"),
+    ("a poltergeist at an apartment showing, realtor nervously trying to explain the floating furniture to prospective tenants", "speaker"),
+    ("a phoenix applying to re-enroll at a university after burning out mid-semester, dean looking carefully at the file", "speaker"),
+    ("an apologetic tornado meeting with the mayor at a small conference table, tiny funnel cloud still spinning gently behind it", "speaker"),
+    ("a skeleton arguing with a doctor about whether it needs a full physical, doctor holding up a completely transparent x-ray", "speaker"),
+    ("a mime at a podium during a speaking engagement, audience growing visibly frustrated", "speaker"),
+    ("a giant snail presenting its five-year business plan to an impatient venture capitalist checking a watch", "speaker"),
+    ("an alien exchange student at show-and-tell presenting a family photo that causes visible alarm among the class", "speaker"),
+    ("a goldfish at a real estate open house, fishbowl under one fin, asking the agent very detailed questions about water pressure", "speaker"),
+    ("a snowman in a doctor's office, thermometer in mouth, nurse wearing a very concerned expression", "speaker"),
+    ("a very large volcano at a neighborhood community board meeting about noise complaints and light pollution", "speaker"),
+    ("a tiny elf presenting its timesheet to a giant skeptical manager, several hours circled in red", "speaker"),
+    ("a medieval court jester performing at a corporate all-hands meeting, all employees staring ahead blankly", "speaker"),
+    ("two cats at a corporate retreat trust fall exercise, neither making any effort to catch the other", "speaker"),
+    ("a sea captain arguing with Google Maps on a phone, standing at a harbor looking baffled", "speaker"),
+    ("a haunted portrait in an art gallery being interviewed by a detective about what it has witnessed over the centuries", "speaker"),
+    ("a very small fairy riding public transit, standing on a seat trying to reach the overhead grip, commuters pretending not to notice", "speaker"),
+    ("a sphinx at a game show buzzing in before the host has finished reading the question, host looking startled", "speaker"),
+    ("a large friendly monster at a kindergarten career day, children raising hands with enormous enthusiasm", "speaker"),
+    ("a tree at a therapy session earnestly explaining its complicated feelings about a nearby lumberjack", "speaker"),
     # ── Scene scenarios ────────────────────────────────────────────────────
     ("a deserted island with two castaways on opposite sides: one side has a full mansion and swimming pool, the other a tiny stick hut, the mansion owner is crossing the beach holding a clipboard labeled 'HOA VIOLATION NOTICE'", "scene"),
     ("Noah's ark boarding two of every animal; at the gangplank a bouncer is checking a list while two confused humans argue they should qualify", "scene"),
@@ -99,7 +153,61 @@ SCENARIOS = [
     ("a 'BEFORE and AFTER' advertisement poster; both panels are identical", "scene"),
     ("a doomsday clock on a wall showing one second to midnight, a sticky note on it reads 'REMINDER: change batteries'", "scene"),
     ("two mountains side by side; one has a dramatic flag planted on the summit, the other has a tiny 'CLOSED FOR MAINTENANCE' sign", "scene"),
+    ("a broken office coffee machine with a long mourning queue of coworkers wearing black armbands, a small floral tribute arranged on the counter beneath it", "scene"),
+    ("a protest outside a zoo; the animals inside are holding signs reading 'FREE THE HUMANS'", "scene"),
+    ("a trophy case at a school filled with gleaming first-place trophies; a small shelf at the very bottom labeled 'Effort' holds a single bent participation ribbon", "scene"),
+    ("a luxury hotel lobby for clouds; a large nimbus cloud checks in with a tiny cloud suitcase, a cumulus cloud bellhop waiting nearby", "scene"),
+    ("a 'happy hour' sign outside a bar in purgatory; every item on the menu board is listed as 'pending'", "scene"),
+    ("a graveyard with only tech company names on the headstones: 'MySpace', 'Vine', 'Google+', one very fresh plot just dug", "scene"),
+    ("a pie chart titled 'How I Spend My Time' where 99% is labeled 'thinking about making the pie chart'", "scene"),
+    ("a glass jar on a desk labeled 'PROBLEMS TO DEAL WITH LATER', so completely overflowing that the lid cannot close", "scene"),
+    ("a job posting tacked to a corkboard: the requirements section fills the entire page; the compensation section reads simply 'exposure'", "scene"),
+    ("a 'KEEP CALM' poster hung on a wall where everything in the room is clearly on fire", "scene"),
+    ("an urgent memo pinned to a bulletin board reading: 'Regarding the previous memo: disregard. Regarding this memo: see previous memo.'", "scene"),
+    ("a city billboard advertising 'NEW! RESPONSIBILITY — now in fun sizes'", "scene"),
+    ("a list of New Year's resolutions where every item has been crossed out except the last one, which reads 'write better list'", "scene"),
+    ("a very crowded elevator with a single button labeled 'SAME FLOOR'", "scene"),
+    ("an office plant with a laminated card taped to its pot reading 'DO NOT WATER — currently thriving'", "scene"),
+    ("an instruction manual open to a complex diagram whose very last step simply reads 'ask someone'", "scene"),
+    ("a tiny emergency glass case mounted on a wall that contains, behind the 'BREAK IN CASE OF EMERGENCY' label, a single bite of chocolate", "scene"),
+    ("a 'things to be grateful for' whiteboard in an office; employees have contributed only 'technically still employed'", "scene"),
+    ("a 'TODAY'S SPECIALS' chalkboard at a diner where every item has been crossed off and replaced with the word 'soup'", "scene"),
+    ("a street where every house has a 'FOR SALE' sign except one in the middle, which has a 'GOOD LUCK' sign", "scene"),
+    ("a very long staircase to heaven with an 'OUT OF ORDER' sign on the escalator beside it, an exhausted queue stretching down out of sight", "scene"),
+    ("a graduation stage where the single diploma on the podium reads 'DEGREE IN HINDSIGHT'", "scene"),
+    ("a hotel lost-and-found shelf neatly labeled 'THINGS PEOPLE FORGOT ON PURPOSE'", "scene"),
+    ("a 'CAUTION: WET FLOOR' sign placed in a very small square in the center of a massive, completely dry ballroom", "scene"),
+    ("a bus stop with a posted schedule where every departure time simply reads 'eventually'", "scene"),
+    ("a library 'most overdue' board; the top entry shows a book that has been out for 47 years, fine listed as 'immeasurable'", "scene"),
+    ("a welcome mat that reads 'GO AWAY' in elegant gold script, a formal wreath on the door above it", "scene"),
+    ("a crossword puzzle where every answer entered is 'I DON'T KNOW'", "scene"),
+    ("a to-do list that has been fully crossed out; the final item at the bottom is 'make to-do list' with a small arrow pointing back up to the top", "scene"),
+    ("a door labeled 'PUSH' that has been pulled so hard it has come entirely off its hinges and is leaning against the frame", "scene"),
+    ("two adjacent signs on a building entrance: one reads 'OPEN 24 HOURS', the other reads 'CLOSED'", "scene"),
+    ("an iceberg floating in calm water with a 'SEA LEVEL' marker midway down; below the waterline an elaborate fully-furnished office is visible", "scene"),
+    ("a piggy bank on a shelf wearing a tiny hand-lettered 'DO NOT DISTURB' sign", "scene"),
+    ("a bulletin board labeled 'WINS THIS QUARTER' — entirely empty except a single sticky note that reads 'this sticky note'", "scene"),
+    ("a tiny scroll labeled 'Terms and Conditions' unrolling off a desk, out the door, and disappearing down the street", "scene"),
+    ("a dumpster with a bronze commemorative plaque mounted on its side reading 'EMPLOYEE OF THE MONTH — 14 YEARS RUNNING'", "scene"),
+    ("two signs on a front lawn side by side: one reads 'FIXER UPPER', the other reads 'MOVE-IN READY'", "scene"),
+    ("a large 'THINK OUTSIDE THE BOX' motivational poster hung on the wall inside a very small windowless cubicle", "scene"),
+    ("a tiny chair at a tiny desk in the center of a vast empty room; the desk has a nameplate reading 'LAST REMAINING RESPONSIBILITY'", "scene"),
+    ("a 'COMPLAINT DEPARTMENT' door in a hallway that has been completely bricked over; a small sign on the bricks reads 'see website'", "scene"),
+    ("a message in a bottle that has washed ashore; nearby on the beach a sign reads 'COMPLAINT BOX'", "scene"),
+    ("a scoreboard at a sporting event showing the score: HUMANS 0 — EVERYTHING ELSE ∞", "scene"),
+    ("a very large empty canvas on a museum wall, explanatory placard reading 'Untitled, Oil on Canvas — The artist had not yet started'", "scene"),
+    ("a family portrait in a living room where everyone poses normally except one member whose face has been replaced with a motivational poster", "scene"),
+    ("a corporate logo on a building facade with the tagline 'WE ARE LISTENING' and a tiny asterisk leading to a footnote in impossibly small print", "scene"),
+    ("a park with two benches facing away from each other, a single figure sitting alone on each one, both reading identical books", "scene"),
+    ("a map with a 'YOU ARE HERE' sticker placed ambiguously directly between two unlabeled locations", "scene"),
+    ("a 'SMART HOME' control panel with every button labeled; one large button simply reads 'OVERTHINK'", "scene"),
+    ("a 'BEFORE AND AFTER' diet advertisement where both photos are identical, the subject in each looking mildly confused", "scene"),
 ]
+
+
+def _scenario_hash(text: str) -> str:
+    """Short stable identifier for a scenario string."""
+    return hashlib.md5(text.encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +285,8 @@ class CaptionContest(commands.Cog):
     def __init__(self, bot: Red):
         self.bot = bot
         self._games: dict[int, dict] = {}  # guild_id -> game state
+        self.config = Config.get_conf(self, identifier=8675309, force_registration=True)
+        self.config.register_guild(used_scenarios=[])  # list of [hash_str, timestamp_float]
 
     def cog_unload(self):
         for game in self._games.values():
@@ -208,6 +318,32 @@ class CaptionContest(commands.Cog):
         except Exception:
             pass
         return None
+
+    # ------------------------------------------------------------------
+    # Scenario selection with 24-hour repeat prevention
+    # ------------------------------------------------------------------
+
+    async def _pick_scenario(self, guild) -> tuple[str, str]:
+        """Pick a scenario not used in the last 24 hours for this guild."""
+        now = time.time()
+        cutoff = now - 86400  # 24 hours
+
+        used_data = await self.config.guild(guild).used_scenarios()
+        recent_hashes = {entry[0] for entry in used_data if entry[1] > cutoff}
+
+        available = [s for s in SCENARIOS if _scenario_hash(s[0]) not in recent_hashes]
+        if not available:
+            # All scenarios used in the last 24 hours — reset and use full list
+            available = SCENARIOS
+
+        scenario, stype = random.choice(available)
+
+        # Prune stale entries and record this usage
+        new_used = [[h, t] for h, t in used_data if t > cutoff]
+        new_used.append([_scenario_hash(scenario), now])
+        await self.config.guild(guild).used_scenarios.set(new_used)
+
+        return scenario, stype
 
     # ------------------------------------------------------------------
     # Game flow
@@ -428,7 +564,7 @@ class CaptionContest(commands.Cog):
         }
 
         wait_msg = await ctx.send("Generating cartoon, please wait...")
-        scenario, stype = random.choice(SCENARIOS)
+        scenario, stype = await self._pick_scenario(ctx.guild)
         url = await self._fetch_image(scenario)
 
         if not url:
