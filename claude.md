@@ -1,2 +1,3 @@
 - if user ends message with ! exclamation just make changes with no explanations
 - after making changes always commit and push to github, no confirmation needed
+- VPS access: ssh -i ~/.ssh/id_rsa ubuntu@150.136.40.239 (use this whenever the user asks to do something on the server/VPS)
