@@ -129,7 +129,9 @@ class SelfTime(commands.Cog):
             description=f"{member.mention} has timed themselves out for **{duration_str}**.",
             color=discord.Color.orange(),
         )
-        embed.add_field(name="Expires", value=f"<t:{int(until.timestamp())}:R>", inline=True)
+        ts = int(until.timestamp())
+        expires_value = f"<t:{ts}:R>" if minutes <= 5 else f"<t:{ts}:f>"
+        embed.add_field(name="Expires", value=expires_value, inline=True)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"Requested by {member.display_name}")
         await ctx.send(embed=embed)
@@ -137,7 +139,7 @@ class SelfTime(commands.Cog):
         # --- DM confirmation (includes role/restart warnings if applicable) ---
         dm_parts = [
             f"You have timed yourself out for **{duration_str}**.",
-            f"Your timeout will expire <t:{int(until.timestamp())}:R>.",
+            f"Your timeout will expire <t:{int(until.timestamp())}:{'R' if minutes <= 5 else 'f'}>.",
         ]
         if admin_roles:
             dm_parts.append(
