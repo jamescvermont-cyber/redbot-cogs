@@ -1,16 +1,12 @@
 import asyncio
-import io
-import logging
+import pathlib
 import random
 
-import aiohttp
 import discord
 from redbot.core import commands
 
-log = logging.getLogger("red.cogs.fruitguesser")
-
 # ── Dev mode — set DEV_MODE = False for production ───────────────────────────
-DEV_MODE = True
+DEV_MODE = False
 
 if DEV_MODE:
     import subprocess as _sp, pathlib as _pl
@@ -64,8 +60,15 @@ FRUITS = [
     "Finger Lime",
 ]
 
+# ── Image library ─────────────────────────────────────────────────────────────
+
+IMAGES_DIR = pathlib.Path(__file__).parent / "images"
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+_WORD_COUNT_NAMES = {2: "Two", 3: "Three", 4: "Four", 5: "Five"}
+
 
 def _scramble(name: str) -> str:
     """Scramble each word in the fruit name independently."""
@@ -78,6 +81,18 @@ def _scramble(name: str) -> str:
     return " ".join(scrambled)
 
 
+def _build_first_hint(fruit: str) -> str:
+    """Return the first hint string: first letter, letter count, word count."""
+    words = fruit.split()
+    first_letter = fruit[0].upper()
+    letter_count = sum(len(w) for w in words)
+    line = f"Starts with letter **{first_letter}** and is **{letter_count}** letters long"
+    if len(words) > 1:
+        word_label = _WORD_COUNT_NAMES.get(len(words), str(len(words)))
+        line += f"\n{word_label} words"
+    return line
+
+
 # ── Game state ────────────────────────────────────────────────────────────────
 
 class FruitGame:
@@ -85,12 +100,12 @@ class FruitGame:
 
     def __init__(self, fruit: str, images: list, task: asyncio.Task):
         self.fruit = fruit
-        self.images = images          # list of image URLs fetched up front
+        self.images = images          # list[pathlib.Path]
         self.used: set = set()        # indices already shown this round
         self.hints_used = 0
         self.task = task
 
-    def pop_image(self) -> str | None:
+    def pop_image(self) -> "pathlib.Path | None":
         if not self.images:
             return None
         unused = [i for i in range(len(self.images)) if i not in self.used]
@@ -142,10 +157,22 @@ class FruitHintView(discord.ui.View):
         footer = f"{remaining} hint(s) remaining." if remaining else "No more hints after this!"
         is_final = game.hints_used == FruitGame.MAX_HINTS
 
-        # Disable this button on the current message first
         await interaction.response.edit_message(view=self)
 
-        if is_final:
+        if game.hints_used == 1:
+            # First hint: letter / word count info
+            embed = discord.Embed(
+                title=f"Hint {game.hints_used}/{FruitGame.MAX_HINTS}",
+                description=_build_first_hint(game.fruit),
+                color=discord.Color.gold(),
+            )
+            embed.set_footer(text=footer)
+            await interaction.followup.send(
+                embed=embed,
+                view=FruitHintView(self.cog, self.channel_id),
+            )
+        elif is_final:
+            # Last hint: scrambled name
             embed = discord.Embed(
                 title=f"Hint {game.hints_used}/{FruitGame.MAX_HINTS} — Final Hint!",
                 description=f"The fruit name scrambled: **{_scramble(game.fruit)}**",
@@ -154,27 +181,20 @@ class FruitHintView(discord.ui.View):
             embed.set_footer(text=footer)
             await interaction.followup.send(embed=embed)
         else:
+            # Middle hints: another image
+            path = game.pop_image()
             embed = discord.Embed(
                 title=f"Hint {game.hints_used}/{FruitGame.MAX_HINTS}",
                 description="Here's another look!",
                 color=discord.Color.gold(),
             )
-            hint_url = game.pop_image()
-            img_data = await self.cog._download_image(hint_url)
             embed.set_footer(text=footer)
-            if img_data:
-                embed.set_image(url="attachment://hint.jpg")
-                await interaction.followup.send(
-                    embed=embed,
-                    file=discord.File(io.BytesIO(img_data), filename="hint.jpg"),
-                    view=FruitHintView(self.cog, self.channel_id),
-                )
-            else:
-                embed.set_image(url=hint_url)
-                await interaction.followup.send(
-                    embed=embed,
-                    view=FruitHintView(self.cog, self.channel_id),
-                )
+            embed.set_image(url="attachment://hint.jpg")
+            await interaction.followup.send(
+                embed=embed,
+                file=discord.File(path, filename="hint.jpg"),
+                view=FruitHintView(self.cog, self.channel_id),
+            )
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
@@ -186,205 +206,16 @@ class FruitGuesser(commands.Cog):
         self.bot = bot
         self.games: dict[int, FruitGame] = {}   # channel_id → FruitGame
 
-    # ── Image fetching ────────────────────────────────────────────────────────
+    # ── Image loading ─────────────────────────────────────────────────────────
 
-    # Keywords that indicate a file is NOT a fruit photo
-    _SKIP_KEYWORDS = frozenset({
-        "flag", "map", "logo", "icon", "coat_of_arms", "seal", "blank",
-        "distribution", "chart", "diagram", "silhouette", "location",
-        "outline", "locator", "signature", "portrait", "person",
-    })
-
-    @classmethod
-    def _is_photo_title(cls, title: str) -> bool:
-        t = title.lower().replace(" ", "_")
-        if t.endswith((".svg", ".gif", ".ogg", ".ogv", ".webm", ".wav", ".mp3")):
-            return False
-        return not any(kw in t for kw in cls._SKIP_KEYWORDS)
-
-    async def _urls_from_titles(
-        self,
-        session: aiohttp.ClientSession,
-        titles: list[str],
-        timeout: aiohttp.ClientTimeout,
-    ) -> list[str]:
-        """Resolve a list of File: titles to 800px thumbnail URLs."""
-        photos = []
-        for i in range(0, len(titles), 20):   # API max 20 titles per request
-            batch = titles[i : i + 20]
-            async with session.get(
-                "https://commons.wikimedia.org/w/api.php",
-                params={
-                    "action": "query",
-                    "titles": "|".join(batch),
-                    "prop": "imageinfo",
-                    "iiprop": "url|mime",
-                    "iiurlwidth": "800",
-                    "format": "json",
-                    "formatversion": "2",
-                },
-                timeout=timeout,
-            ) as resp:
-                data = await resp.json()
-            for page in data.get("query", {}).get("pages", []):
-                for info in page.get("imageinfo", []):
-                    if info.get("mime") not in ("image/jpeg", "image/png"):
-                        continue
-                    url = info.get("thumburl") or info.get("url", "")
-                    if url.startswith("http"):
-                        photos.append(url)
-        return photos
-
-    async def _fetch_from_wikipedia(
-        self,
-        session: aiohttp.ClientSession,
-        fruit: str,
-        timeout: aiohttp.ClientTimeout,
-    ) -> list[str]:
-        """Pull images from the Wikipedia article for *fruit* (always on-topic)."""
-        async with session.get(
-            "https://en.wikipedia.org/w/api.php",
-            params={
-                "action": "query",
-                "titles": fruit,
-                "prop": "images",
-                "imlimit": "30",
-                "format": "json",
-                "formatversion": "2",
-                "redirects": "1",
-            },
-            timeout=timeout,
-        ) as resp:
-            data = await resp.json()
-
-        pages = data.get("query", {}).get("pages", [])
-        if not pages or pages[0].get("missing"):
+    def _load_images(self, fruit: str) -> list:
+        """Return a shuffled list of image Paths from the fruit's folder."""
+        folder = IMAGES_DIR / fruit
+        if not folder.is_dir():
             return []
-
-        titles = [
-            img["title"]
-            for img in pages[0].get("images", [])
-            if self._is_photo_title(img["title"])
-        ]
-        if not titles:
-            return []
-        return await self._urls_from_titles(session, titles, timeout)
-
-    async def _fetch_from_commons_search(
-        self,
-        session: aiohttp.ClientSession,
-        fruit: str,
-        timeout: aiohttp.ClientTimeout,
-    ) -> list[str]:
-        """Text-search Wikimedia Commons, filtering by filename.
-
-        Appends ' fruit' to the query when not already present so that
-        e.g. 'kiwi' becomes 'kiwi fruit' — avoiding birds, people, etc.
-        """
-        query = fruit if "fruit" in fruit.lower() else f"{fruit} fruit"
-        async with session.get(
-            "https://commons.wikimedia.org/w/api.php",
-            params={
-                "action": "query",
-                "generator": "search",
-                "gsrsearch": query,
-                "gsrnamespace": "6",
-                "gsrlimit": "50",
-                "prop": "imageinfo",
-                "iiprop": "url|mime",
-                "iiurlwidth": "800",
-                "format": "json",
-                "formatversion": "2",
-            },
-            timeout=timeout,
-        ) as resp:
-            data = await resp.json()
-
-        # Only keep files whose name contains at least one word from the fruit name
-        fruit_words = {w.lower() for w in fruit.split() if len(w) > 3}
-        photos = []
-        for page in data.get("query", {}).get("pages", []):
-            title = page.get("title", "").lower()
-            if not self._is_photo_title(title):
-                continue
-            if fruit_words and not any(w in title for w in fruit_words):
-                continue
-            for info in page.get("imageinfo", []):
-                if info.get("mime") not in ("image/jpeg", "image/png"):
-                    continue
-                url = info.get("thumburl") or info.get("url", "")
-                if url.startswith("http"):
-                    photos.append(url)
-        return photos
-
-    async def _fetch_images(self, fruit: str, max_count: int = 35, dev_channel=None) -> list[str]:
-        """Return up to *max_count* relevant photo URLs for *fruit*.
-
-        Always combines Wikipedia article images (editor-curated) with a
-        'fruit'-suffixed Commons text search for a larger, varied pool.
-        """
-        timeout = aiohttp.ClientTimeout(total=15)
-        headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                results = await asyncio.gather(
-                    self._fetch_from_wikipedia(session, fruit, timeout),
-                    self._fetch_from_commons_search(session, fruit, timeout),
-                    return_exceptions=True,
-                )
-            wiki_photos, commons_photos = results
-            if isinstance(wiki_photos, Exception):
-                log.error("Wikipedia fetch failed for %r: %s", fruit, wiki_photos)
-                # if DEV_MODE and dev_channel:
-                #     await dev_channel.send(f"🔴 **[DEV]** Wikipedia fetch failed for `{fruit}`:\n```{wiki_photos}```")
-                wiki_photos = []
-            if isinstance(commons_photos, Exception):
-                log.error("Commons fetch failed for %r: %s", fruit, commons_photos)
-                # if DEV_MODE and dev_channel:
-                #     await dev_channel.send(f"🔴 **[DEV]** Commons fetch failed for `{fruit}`:\n```{commons_photos}```")
-                commons_photos = []
-
-            log.debug("Fetched %d wiki + %d commons images for %r", len(wiki_photos), len(commons_photos), fruit)
-            # if DEV_MODE and dev_channel:
-            #     sample = (wiki_photos + commons_photos)[:3]
-            #     sample_str = "\n".join(sample) if sample else "none"
-            #     await dev_channel.send(
-            #         f"🟡 **[DEV]** `{fruit}`: {len(wiki_photos)} wiki + {len(commons_photos)} commons\n"
-            #         f"First URLs:\n{sample_str}"
-            #     )
-
-            # Merge, deduplicate, Wikipedia results first
-            seen: set[str] = set()
-            photos: list[str] = []
-            for url in wiki_photos + commons_photos:
-                if url not in seen:
-                    seen.add(url)
-                    photos.append(url)
-
-            if not photos:
-                log.warning("No images found for fruit %r", fruit)
-                # if DEV_MODE and dev_channel:
-                #     await dev_channel.send(f"⚠️ **[DEV]** No images found for `{fruit}` after merging.")
-            random.shuffle(photos)
-            return photos[:max_count]
-        except Exception as e:
-            log.exception("Unexpected error fetching images for %r", fruit)
-            # if DEV_MODE and dev_channel:
-            #     await dev_channel.send(f"🔴 **[DEV]** Unexpected error fetching images for `{fruit}`:\n```{e}```")
-            return []
-
-    async def _download_image(self, url: str) -> bytes | None:
-        """Download an image URL and return its bytes, or None on failure."""
-        timeout = aiohttp.ClientTimeout(total=10)
-        headers = {"User-Agent": "FruitGuesserBot/1.0 (Discord Bot)"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=timeout) as resp:
-                    if resp.status == 200:
-                        return await resp.read()
-        except Exception:
-            pass
-        return None
+        paths = [p for p in folder.iterdir() if p.suffix.lower() in _IMAGE_EXTS and p.is_file()]
+        random.shuffle(paths)
+        return paths
 
     # ── Timer ─────────────────────────────────────────────────────────────────
 
@@ -414,16 +245,23 @@ class FruitGuesser(commands.Cog):
         if ctx.channel.id in self.games:
             await ctx.send(
                 "A game is already running here! "
-                "Type your guess or `$fhint` for another image."
+                "Type your guess or use the Hint button for another image."
             )
             return
 
-        fruit = random.choice(FRUITS)
-        loading = await ctx.send("Searching for images...")
+        # Pick a random fruit that has local images downloaded
+        fruit, images = None, []
+        for candidate in random.sample(FRUITS, len(FRUITS)):
+            imgs = self._load_images(candidate)
+            if imgs:
+                fruit, images = candidate, imgs
+                break
 
-        images = await self._fetch_images(fruit, dev_channel=ctx.channel)
-        if not images:
-            await loading.edit(content="Couldn't fetch images right now. Please try again!")
+        if fruit is None:
+            await ctx.send(
+                "No fruit images found on disk. "
+                "Run `python fruitguesser/download_images.py` to download the image library first."
+            )
             return
 
         task = asyncio.create_task(self._game_timer(ctx.channel, fruit))
@@ -434,26 +272,19 @@ class FruitGuesser(commands.Cog):
             title=f"What fruit is this??{DEV_LABEL}",
             description=(
                 "Type your guess in chat — anyone can answer!\n"
-                "You have **60 seconds**. Use the **Hint** button below *(3 max, last hint scrambles the name)*."
+                "You have **60 seconds**. Use the **Hint** button below *(3 max)*."
             ),
             color=discord.Color.green(),
         )
-        image_url = game.pop_image()
-        img_data = await self._download_image(image_url)
-        await loading.delete()
-        if img_data:
-            embed.set_image(url="attachment://fruit.jpg")
-            await ctx.send(
-                embed=embed,
-                file=discord.File(io.BytesIO(img_data), filename="fruit.jpg"),
-                view=FruitHintView(self, ctx.channel.id),
-            )
-        else:
-            embed.set_image(url=image_url)
-            await ctx.send(embed=embed, view=FruitHintView(self, ctx.channel.id))
-        # if DEV_MODE:
-        #     status = "downloaded" if img_data else "URL fallback"
-        #     await ctx.send(f"🟡 **[DEV]** image: {status} — `{image_url}`")
+        embed.set_footer(text="Hint 1: letter/length info  |  Hint 2: another image  |  Hint 3: scrambled name")
+        embed.set_image(url="attachment://fruit.jpg")
+
+        first_image = game.pop_image()
+        await ctx.send(
+            embed=embed,
+            file=discord.File(first_image, filename="fruit.jpg"),
+            view=FruitHintView(self, ctx.channel.id),
+        )
 
     # ── Guess listener ────────────────────────────────────────────────────────
 
