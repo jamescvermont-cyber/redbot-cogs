@@ -201,6 +201,7 @@ class Trivia(commands.Cog):
 
                 if i < game.total - 1 and game.phase != "ended":
                     await asyncio.sleep(2)
+                    await ctx.send("\u200b")
 
             if game.phase != "ended":
                 await self._show_final_scores(ctx, game)
