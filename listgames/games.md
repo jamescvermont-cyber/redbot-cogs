@@ -1,8 +1,8 @@
-## $an, Anagrams
+### $an, Anagrams
 A word is scrambled and people rush to find words in the letters
-## $ag, Animal Guesser
+### $ag, Animal Guesser
 Random animal is shown and the first to guess it wins
-## $cc, Caption Contest
+### $cc, Caption Contest
 AI generated random new yorker style cartoon. Suggest a caption and ppl vote for the best
 ## $ec, Exquisite Corpse
 No winners in this one. you just take turns writing sentences to build a story. you can only see the last 4 words of the previous one.
