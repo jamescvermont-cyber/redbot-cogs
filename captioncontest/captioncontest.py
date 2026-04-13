@@ -272,6 +272,54 @@ class SubmitCaptionView(ui.View):
         await interaction.response.send_modal(SubmitCaptionModal(self.cog, self.guild_id))
 
 
+class VoteView(ui.View):
+    """Private button-based voting — responses are ephemeral so nobody can see who voted."""
+
+    def __init__(self, cog: "CaptionContest", guild_id: int, caption_list: list):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild_id = guild_id
+        for i, (_author_id, _text) in enumerate(caption_list):
+            btn = ui.Button(
+                label=f"Caption {i + 1}",
+                style=discord.ButtonStyle.secondary,
+                emoji=NUMBER_EMOJIS[i],
+                custom_id=f"cc_vote_{guild_id}_{i}",
+            )
+            btn.callback = self._make_callback(i)
+            self.add_item(btn)
+
+    def _make_callback(self, idx: int):
+        async def callback(interaction: discord.Interaction):
+            game = self.cog._games.get(self.guild_id)
+            if not game or game["phase"] != "voting":
+                await interaction.response.send_message("Voting is closed!", ephemeral=True)
+                return
+
+            voter_id = interaction.user.id
+            votes = game["votes"]
+            caption_list = game["caption_list"]
+            text = caption_list[idx][1]
+
+            prev = votes.get(voter_id)
+            if prev == idx:
+                await interaction.response.send_message(
+                    f"You're already voting for {NUMBER_EMOJIS[idx]} Caption {idx + 1}. "
+                    f"Click a different one to change your vote.",
+                    ephemeral=True,
+                )
+                return
+
+            votes[voter_id] = idx
+            if prev is not None:
+                msg = f"Vote changed to {NUMBER_EMOJIS[idx]} **Caption {idx + 1}**: {text}"
+            else:
+                msg = f"Voted for {NUMBER_EMOJIS[idx]} **Caption {idx + 1}**: {text}"
+            await interaction.response.send_message(msg, ephemeral=True)
+
+        return callback
+
+
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
@@ -294,9 +342,10 @@ class CaptionContest(commands.Cog):
                 t = game.get(key)
                 if t:
                     t.cancel()
-            v = game.get("submit_view")
-            if v:
-                v.stop()
+            for vkey in ("submit_view", "vote_view"):
+                v = game.get(vkey)
+                if v:
+                    v.stop()
 
     # ------------------------------------------------------------------
     # Image generation
@@ -405,11 +454,12 @@ class CaptionContest(commands.Cog):
         game["phase"] = "voting"
         caption_list = list(captions.items())  # [(user_id, text), ...] — order is stable
         game["caption_list"] = caption_list
+        game["votes"] = {}  # voter_id -> caption index (private until reveal)
 
         embed = discord.Embed(
             title="Vote for the best caption!",
             description=(
-                f"React with a number. You can't vote for your own.\n"
+                f"Click a button to cast your vote — your choice stays **private** until the reveal.\n"
                 f"Voting closes in **{self.VOTE_SECONDS} seconds**."
             ),
             color=discord.Color.gold(),
@@ -419,11 +469,10 @@ class CaptionContest(commands.Cog):
         lines = [f"{NUMBER_EMOJIS[i]}  {text}" for i, (_, text) in enumerate(caption_list)]
         embed.add_field(name="The Captions", value="\n".join(lines), inline=False)
 
-        vote_msg = await ch.send(embed=embed)
+        vote_view = VoteView(self, guild_id, caption_list)
+        game["vote_view"] = vote_view
+        vote_msg = await ch.send(embed=embed, view=vote_view)
         game["vote_message_id"] = vote_msg.id
-
-        for i in range(len(caption_list)):
-            await vote_msg.add_reaction(NUMBER_EMOJIS[i])
 
         game["vote_task"] = asyncio.create_task(self._vote_timeout(guild_id))
 
@@ -440,28 +489,37 @@ class CaptionContest(commands.Cog):
             await ch.send("No captions were submitted. Game over.")
             return
 
-        # Tally votes from reactions, excluding bot and self-votes
+        # Disable vote buttons
+        vote_view = game.get("vote_view")
+        if vote_view:
+            vote_view.stop()
+            vote_msg_id = game.get("vote_message_id")
+            if vote_msg_id:
+                try:
+                    vote_msg = await ch.fetch_message(vote_msg_id)
+                    closed_view = ui.View()
+                    for i in range(len(caption_list)):
+                        closed_view.add_item(ui.Button(
+                            label=f"Caption {i + 1}",
+                            style=discord.ButtonStyle.secondary,
+                            emoji=NUMBER_EMOJIS[i],
+                            disabled=True,
+                        ))
+                    await vote_msg.edit(view=closed_view)
+                except Exception:
+                    pass
+
+        # Tally votes from private votes dict (no self-vote restriction)
+        votes = game.get("votes", {})  # voter_id -> caption index
         vote_counts = {uid: 0 for uid, _ in caption_list}
-        vote_msg_id = game.get("vote_message_id")
-        if vote_msg_id:
-            try:
-                vote_msg = await ch.fetch_message(vote_msg_id)
-                for reaction in vote_msg.reactions:
-                    emoji_str = str(reaction.emoji)
-                    if emoji_str not in NUMBER_EMOJIS:
-                        continue
-                    idx = NUMBER_EMOJIS.index(emoji_str)
-                    if idx >= len(caption_list):
-                        continue
-                    author_id = caption_list[idx][0]
-                    async for user in reaction.users():
-                        if user.bot:
-                            continue
-                        if user.id == author_id:
-                            continue  # self-votes excluded (also removed in real time)
-                        vote_counts[author_id] += 1
-            except Exception:
-                pass
+        # voters_per_caption[idx] = list of voter display names
+        voters_per_caption: dict[int, list[str]] = {i: [] for i in range(len(caption_list))}
+        for voter_id, idx in votes.items():
+            if idx < len(caption_list):
+                author_id = caption_list[idx][0]
+                vote_counts[author_id] += 1
+                member = ch.guild.get_member(voter_id)
+                voters_per_caption[idx].append(member.display_name if member else f"User {voter_id}")
 
         sorted_results = sorted(caption_list, key=lambda x: vote_counts[x[0]], reverse=True)
         winner_uid = sorted_results[0][0]
@@ -470,15 +528,18 @@ class CaptionContest(commands.Cog):
         embed = discord.Embed(title="Caption Contest — Results!", color=discord.Color.green())
         embed.set_image(url=game["image_url"])
 
-        lines = []
+        sorted_lines = []
         for uid, text in sorted_results:
+            orig_idx = next(j for j, (u, _) in enumerate(caption_list) if u == uid)
             member = ch.guild.get_member(uid)
             name = member.display_name if member else f"User {uid}"
-            votes = vote_counts[uid]
+            v = vote_counts[uid]
             trophy = "🏆 " if (uid == winner_uid and winner_votes > 0) else ""
-            lines.append(f"{trophy}**{name}** — {text}  *({votes} vote{'s' if votes != 1 else ''})*")
+            voter_names = voters_per_caption[orig_idx]
+            voter_str = f"\n    ↳ voted by: {', '.join(voter_names)}" if voter_names else ""
+            sorted_lines.append(f"{trophy}**{name}** — {text}  *({v} vote{'s' if v != 1 else ''})*{voter_str}")
 
-        embed.add_field(name="Results", value="\n".join(lines), inline=False)
+        embed.add_field(name="Results", value="\n".join(sorted_lines), inline=False)
 
         if winner_votes == 0:
             embed.set_footer(text="No votes cast — everyone's a winner (or loser).")
@@ -488,48 +549,6 @@ class CaptionContest(commands.Cog):
             embed.set_footer(text=f"🏆 Winner: {name}")
 
         await ch.send(embed=embed)
-
-    # ------------------------------------------------------------------
-    # Listeners
-    # ------------------------------------------------------------------
-
-    @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
-        """Remove self-votes immediately when a player reacts to their own caption."""
-        if payload.user_id == self.bot.user.id:
-            return
-        if not payload.guild_id:
-            return
-
-        game = self._games.get(payload.guild_id)
-        if not game or game["phase"] != "voting":
-            return
-        if payload.message_id != game.get("vote_message_id"):
-            return
-
-        emoji_str = str(payload.emoji)
-        if emoji_str not in NUMBER_EMOJIS:
-            return
-
-        idx = NUMBER_EMOJIS.index(emoji_str)
-        caption_list = game.get("caption_list", [])
-        if idx >= len(caption_list):
-            return
-
-        author_id = caption_list[idx][0]
-        if payload.user_id != author_id:
-            return  # not a self-vote
-
-        ch = self.bot.get_channel(payload.channel_id)
-        if not ch:
-            return
-        try:
-            msg = await ch.fetch_message(payload.message_id)
-            member = ch.guild.get_member(payload.user_id)
-            if member:
-                await msg.remove_reaction(payload.emoji, member)
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------
     # Commands
@@ -556,9 +575,11 @@ class CaptionContest(commands.Cog):
             "phase": "submitting",
             "captions": {},
             "caption_list": None,
+            "votes": {},
             "submit_message_id": None,
             "submit_view": None,
             "vote_message_id": None,
+            "vote_view": None,
             "submit_task": None,
             "vote_task": None,
         }
