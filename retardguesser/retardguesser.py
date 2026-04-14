@@ -120,12 +120,24 @@ class PersonGame:
 class RetardGuesser(commands.Cog):
     """Guess the famous person — photos, hints, 90 seconds."""
 
+    _IS_IMAGE_GUESSER = True   # marker used by _rival_game_running
+    _DISPLAY_NAME = "Retard Guesser"
+
     # Shared across all channels: name → timestamp of last use
     _used_recently: dict[str, float] = {}
 
     def __init__(self, bot):
         self.bot = bot
         self.games: dict[int, PersonGame] = {}   # channel_id → PersonGame
+
+    def _rival_game_running(self, channel_id: int) -> "str | None":
+        """Return display name of another image-guesser running in this channel, or None."""
+        for cog in self.bot.cogs.values():
+            if cog is self:
+                continue
+            if getattr(cog, "_IS_IMAGE_GUESSER", False) and channel_id in getattr(cog, "games", {}):
+                return getattr(cog, "_DISPLAY_NAME", type(cog).__name__)
+        return None
 
     # ── Image loading ─────────────────────────────────────────────────────────
 
@@ -187,6 +199,10 @@ class RetardGuesser(commands.Cog):
     # ── Start a new game ──────────────────────────────────────────────────────
 
     async def _start_game(self, channel: discord.TextChannel):
+        rival = self._rival_game_running(channel.id)
+        if rival:
+            await channel.send(f"**{rival}** is already running here! Finish that game first.")
+            return
         result = self._pick_person()
         if result is None:
             await channel.send(

@@ -227,9 +227,21 @@ class FruitPlayAgainView(discord.ui.View):
 class FruitGuesser(commands.Cog):
     """Fruit guessing game — who can identify the mystery fruit from a photo?"""
 
+    _IS_IMAGE_GUESSER = True   # marker used by _rival_game_running
+    _DISPLAY_NAME = "Fruit Guesser"
+
     def __init__(self, bot):
         self.bot = bot
         self.games: dict[int, FruitGame] = {}   # channel_id → FruitGame
+
+    def _rival_game_running(self, channel_id: int) -> "str | None":
+        """Return display name of another image-guesser running in this channel, or None."""
+        for cog in self.bot.cogs.values():
+            if cog is self:
+                continue
+            if getattr(cog, "_IS_IMAGE_GUESSER", False) and channel_id in getattr(cog, "games", {}):
+                return getattr(cog, "_DISPLAY_NAME", type(cog).__name__)
+        return None
 
     # ── Image loading ─────────────────────────────────────────────────────────
 
@@ -268,6 +280,10 @@ class FruitGuesser(commands.Cog):
     # ── Start game ────────────────────────────────────────────────────────────
 
     async def _start_game(self, channel: discord.TextChannel):
+        rival = self._rival_game_running(channel.id)
+        if rival:
+            await channel.send(f"**{rival}** is already running here! Finish that game first.")
+            return
         fruit, images = None, []
         for candidate in random.sample(FRUITS, len(FRUITS)):
             imgs = self._load_images(candidate)

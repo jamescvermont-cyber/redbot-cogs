@@ -170,11 +170,23 @@ class BrandGame:
 class BrandGuesser(commands.Cog):
     """Guess the brand from a progressively revealed logo!"""
 
+    _IS_IMAGE_GUESSER = True   # marker used by _rival_game_running
+    _DISPLAY_NAME = "Brand Guesser"
+
     _used_recently: dict = {}   # brand_name → timestamp (shared across channels)
 
     def __init__(self, bot):
         self.bot  = bot
         self.games: dict = {}   # channel_id → BrandGame
+
+    def _rival_game_running(self, channel_id: int) -> "str | None":
+        """Return display name of another image-guesser running in this channel, or None."""
+        for cog in self.bot.cogs.values():
+            if cog is self:
+                continue
+            if getattr(cog, "_IS_IMAGE_GUESSER", False) and channel_id in getattr(cog, "games", {}):
+                return getattr(cog, "_DISPLAY_NAME", type(cog).__name__)
+        return None
 
     # ── Brand / image selection ───────────────────────────────────────────────
 
@@ -269,6 +281,10 @@ class BrandGuesser(commands.Cog):
     # ── Start game ────────────────────────────────────────────────────────────
 
     async def _start_game(self, channel: discord.TextChannel):
+        rival = self._rival_game_running(channel.id)
+        if rival:
+            await channel.send(f"**{rival}** is already running here! Finish that game first.")
+            return
         if not BRANDS:
             await channel.send("No brands loaded. Add entries to `brands.py` to play!")
             return
