@@ -193,12 +193,18 @@ class ArtGuesser(commands.Cog):
 
     # ── Game start (shared by $arg and Play Again) ────────────────────────────
 
-    async def _start_game(self, channel: discord.TextChannel):
+    async def _start_game(self, channel: discord.TextChannel, artist_name: Optional[str] = None):
         if not ARTISTS_LIST:
             await channel.send("No artists loaded. Add entries to `artists.py` to play!")
             return
 
-        artist = self._pick_artist()
+        if artist_name:
+            artist = next((a for a in ARTISTS_LIST if a["name"].lower() == artist_name.lower()), None)
+            if artist is None:
+                await channel.send(f"Artist `{artist_name}` not found in the list.")
+                return
+        else:
+            artist = self._pick_artist()
         if artist is None:
             await channel.send("Could not pick an artist — please try again.")
             return
@@ -252,8 +258,9 @@ class ArtGuesser(commands.Cog):
     # ── $arg ──────────────────────────────────────────────────────────────────
 
     @commands.command(name="arg")
-    async def arg(self, ctx: commands.Context):
-        """Start an art guessing game. Running during a game reveals the answer and starts a new one."""
+    async def arg(self, ctx: commands.Context, subcommand: Optional[str] = None):
+        """Start an art guessing game. Running during a game reveals the answer and starts a new one.
+        Use `$arg test` to start a game with Zhang Daqian for testing."""
         # If a game is already running: reveal answer, then start a new game
         if ctx.channel.id in self.games:
             old = self.games.pop(ctx.channel.id)
@@ -265,7 +272,10 @@ class ArtGuesser(commands.Cog):
             )
             await ctx.send(embed=embed)
 
-        await self._start_game(ctx.channel)
+        if subcommand and subcommand.lower() == "test":
+            await self._start_game(ctx.channel, artist_name="Zhang Daqian")
+        else:
+            await self._start_game(ctx.channel)
 
     # ── Message listener ──────────────────────────────────────────────────────
 
