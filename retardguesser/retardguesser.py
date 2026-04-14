@@ -70,6 +70,30 @@ def _scramble(name: str) -> str:
     )
 
 
+# ── Play Again button ─────────────────────────────────────────────────────────
+
+class PlayAgainView(discord.ui.View):
+    def __init__(self, cog: "RetardGuesser", channel_id: int):
+        super().__init__(timeout=300)   # button disappears after 5 min
+        self.cog = cog
+        self.channel_id = channel_id
+
+    @discord.ui.button(label="Play Again", style=discord.ButtonStyle.green, emoji="🎮")
+    async def play_again(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.channel_id in self.cog.games:
+            await interaction.response.send_message(
+                "A game is already running here!", ephemeral=True
+            )
+            return
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+        await self.cog._start_game(interaction.channel)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
 # ── Game state ────────────────────────────────────────────────────────────────
 
 class PersonGame:
@@ -154,23 +178,23 @@ class RetardGuesser(commands.Cog):
             description=f"Nobody guessed it. The answer was **{person_name}**.",
             color=discord.Color(0x99aab5),
         )
-        await channel.send(embed=embed)
+        await channel.send(embed=embed, view=PlayAgainView(self, channel.id))
 
     # ── Start a new game ──────────────────────────────────────────────────────
 
-    async def _start_game(self, ctx: commands.Context):
+    async def _start_game(self, channel: discord.TextChannel):
         result = self._pick_person()
         if result is None:
-            await ctx.send(
+            await channel.send(
                 "No person images found on disk. "
                 "Run the download script on the server to populate the image library."
             )
             return
 
         person, images = result
-        task = asyncio.create_task(self._game_timer(ctx.channel, person["name"]))
+        task = asyncio.create_task(self._game_timer(channel, person["name"]))
         game = PersonGame(person, images, task)
-        self.games[ctx.channel.id] = game
+        self.games[channel.id] = game
 
         first_image = game.pop_image()
         embed = discord.Embed(
@@ -184,7 +208,7 @@ class RetardGuesser(commands.Cog):
             color=discord.Color.blurple(),
         )
         embed.set_image(url="attachment://person.jpg")
-        await ctx.send(
+        await channel.send(
             embed=embed,
             file=discord.File(first_image, filename="person.jpg"),
         )
@@ -208,7 +232,7 @@ class RetardGuesser(commands.Cog):
             )
             await ctx.send(embed=embed)
 
-        await self._start_game(ctx)
+        await self._start_game(ctx.channel)
 
     # ── on_message: n / h / guesses ──────────────────────────────────────────
 
@@ -314,7 +338,7 @@ class RetardGuesser(commands.Cog):
             color=discord.Color.green(),
         )
         embed.set_footer(text="Start a new game with $rg!")
-        await message.channel.send(embed=embed)
+        await message.channel.send(embed=embed, view=PlayAgainView(self, message.channel.id))
 
     # ── Gamestop integration ──────────────────────────────────────────────────
 
