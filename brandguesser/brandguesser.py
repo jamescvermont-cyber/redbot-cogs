@@ -123,6 +123,7 @@ class BrandGame:
         self.brand_dir    = brand_dir
         self.task         = task
         self.participants: set = set()
+        self.msg: "discord.Message | None" = None   # set after initial send
 
     @property
     def stages_dir(self) -> pathlib.Path:
@@ -185,7 +186,7 @@ class BrandGuesser(commands.Cog):
     # ── Game runner ───────────────────────────────────────────────────────────
 
     async def _game_runner(self, channel: discord.TextChannel, brand_name: str):
-        """Posts stages s2-s5 every 10 s, then times out and reveals the original."""
+        """Edits the game message with each new stage every 10 s, then times out."""
         try:
             for stage_num in range(2, NUM_STAGES + 1):
                 await asyncio.sleep(STAGE_INTERVAL)
@@ -193,9 +194,20 @@ class BrandGuesser(commands.Cog):
                 if game is None:
                     return
                 path = game.stage_path(stage_num)
-                if path.exists():
-                    await channel.send(
-                        file=discord.File(path, filename=f"brand_s{stage_num}.jpg")
+                if path.exists() and game.msg is not None:
+                    embed = discord.Embed(
+                        title="Guess the Brand!",
+                        description=(
+                            f"## {game.display}\n"
+                            f"**{game.letter_count} letters** · {TIMEOUT_SECONDS}s to guess · "
+                            f"new stage every {STAGE_INTERVAL}s"
+                        ),
+                        color=discord.Color.blurple(),
+                    )
+                    embed.set_image(url="attachment://brand.jpg")
+                    await game.msg.edit(
+                        embed=embed,
+                        attachments=[discord.File(path, filename="brand.jpg")],
                     )
             await asyncio.sleep(GRACE_SECONDS)
         except asyncio.CancelledError:
@@ -273,13 +285,14 @@ class BrandGuesser(commands.Cog):
             color=discord.Color.blurple(),
         )
         if stage1.exists():
-            embed.set_image(url="attachment://brand_s1.jpg")
-            await channel.send(
+            embed.set_image(url="attachment://brand.jpg")
+            msg = await channel.send(
                 embed=embed,
-                file=discord.File(stage1, filename="brand_s1.jpg"),
+                file=discord.File(stage1, filename="brand.jpg"),
             )
         else:
-            await channel.send(embed=embed)
+            msg = await channel.send(embed=embed)
+        game.msg = msg
 
     # ── $bg command ──────────────────────────────────────────────────────────
 
