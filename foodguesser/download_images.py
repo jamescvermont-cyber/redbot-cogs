@@ -36,7 +36,7 @@ DOWNLOAD_TIMEOUT = 20
 CANDIDATE_URLS   = 20   # fetch this many URLs; take first 4 that download OK
 IMAGES_PER_FOOD  = 4
 
-DISPLAY_SIZE = (400, 400)
+MAX_DIMENSION = 900   # max side; aspect ratio preserved
 
 HEADERS = {
     "User-Agent": (
@@ -115,8 +115,8 @@ def process_food(name: str, idx: int, total: int):
             continue
         slot = saved + 1
         dest = folder / f"img-{slot:03d}.jpg"
-        img_resized = img.resize(DISPLAY_SIZE, Image.LANCZOS)
-        img_resized.save(dest, "JPEG", quality=92)
+        img.thumbnail((MAX_DIMENSION, MAX_DIMENSION), Image.LANCZOS)
+        img.save(dest, "JPEG", quality=85)
         print(f" img-{slot:03d}", end="", flush=True)
         saved += 1
 

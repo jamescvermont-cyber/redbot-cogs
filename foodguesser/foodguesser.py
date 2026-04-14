@@ -218,6 +218,7 @@ class FoodGuesser(commands.Cog):
                 f"Randomly chosen from **{TOTAL_FOODS:,}** dishes.\n\n"
                 f"Type **`n`** — another photo (up to {MAX_EXTRA_IMAGES} extra)\n"
                 f"Type **`h`** — hint\n"
+                f"Type **`s`** — skip (reveals the answer)\n"
                 f"You have **{TIMEOUT_SECONDS} seconds**!"
             ),
             color=discord.Color.orange(),
@@ -339,6 +340,28 @@ class FoodGuesser(commands.Cog):
 
             game.hint_index += 1
             await message.channel.send(embed=embed)
+            return
+
+        # ── s: skip (reveal answer + immediately start new game) ─────────────
+        if lower == "s":
+            game.task.cancel()
+            del self.games[message.channel.id]
+            data = FOOD_DATA.get(game.food, {})
+            embed = discord.Embed(
+                title="Skipped!",
+                description=f"The answer was **{game.food}**.",
+                color=discord.Color(0x99aab5),
+            )
+            if data.get("origin"):
+                embed.add_field(name="Origin", value=data["origin"], inline=False)
+            if data.get("ingredients"):
+                embed.add_field(
+                    name="Key Ingredients",
+                    value=", ".join(data["ingredients"]),
+                    inline=False,
+                )
+            await message.channel.send(embed=embed)
+            await self._start_game(message.channel)
             return
 
         # ── Guess ─────────────────────────────────────────────────────────────
