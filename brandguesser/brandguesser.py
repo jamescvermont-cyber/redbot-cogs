@@ -39,10 +39,10 @@ else:
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 TOTAL_BRANDS    = len(BRANDS)
-STAGE_INTERVAL  = 10   # seconds between consecutive stage reveals
+STAGE_INTERVAL  = 6    # seconds between consecutive stage reveals
 NUM_STAGES      = 5    # s1 … s5
-GRACE_SECONDS   = 20   # extra seconds after stage 5 before timeout
-TIMEOUT_SECONDS = (NUM_STAGES - 1) * STAGE_INTERVAL + GRACE_SECONDS   # 60 s
+GRACE_SECONDS   = 16   # extra seconds after stage 5 before timeout
+TIMEOUT_SECONDS = (NUM_STAGES - 1) * STAGE_INTERVAL + GRACE_SECONDS   # 40 s
 _24H            = 86_400
 
 
