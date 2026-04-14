@@ -1,0 +1,12 @@
+{
+    "name": "BrandGuesser",
+    "short": "Guess the brand from a progressively revealed logo!",
+    "description": "A logo guessing game. Pick a random brand, reveal stages every 10 seconds, show original on win or timeout.",
+    "author": ["jamescvermont-cyber"],
+    "install_msg": "Load with: `[p]cog load brandguesser`. Start a game with `$bg`.",
+    "min_bot_permissions": ["send_messages", "embed_links", "attach_files"],
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "hidden": false,
+    "disabled": false,
+    "required_cogs": {}
+}
