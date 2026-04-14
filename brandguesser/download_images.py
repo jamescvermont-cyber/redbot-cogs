@@ -104,16 +104,38 @@ def _new_ddgs():
 
 
 def search_images(search_term: str, want: int) -> list:
-    """Search DDG images (no type filter) and return up to `want` image URLs."""
-    for attempt in range(3):
-        try:
-            results = list(_new_ddgs().images(search_term, max_results=want))
-            return [r["image"] for r in results if r.get("image")][:want]
-        except Exception as exc:
-            wait = (attempt + 1) * 5
-            print(f"\n  [DDG error #{attempt+1}] {exc!r} — waiting {wait}s", flush=True)
-            time.sleep(wait)
-    return []
+    """Search DDG images (general + clipart) and return up to `want` image URLs."""
+    urls_seen = set()
+    urls = []
+
+    def _fetch(term, type_image=None, max_results=None):
+        for attempt in range(3):
+            try:
+                kwargs = {"max_results": max_results or want}
+                if type_image:
+                    kwargs["type_image"] = type_image
+                results = list(_new_ddgs().images(term, **kwargs))
+                return [r["image"] for r in results if r.get("image")]
+            except Exception as exc:
+                wait = (attempt + 1) * 5
+                print(f"\n  [DDG error #{attempt+1}] {exc!r} — waiting {wait}s", flush=True)
+                time.sleep(wait)
+        return []
+
+    # Pass 1: clipart (biases toward clean logo images)
+    for url in _fetch(search_term, type_image="clipart", max_results=want):
+        if url not in urls_seen:
+            urls_seen.add(url)
+            urls.append(url)
+
+    # Pass 2: general (no filter) — fill remaining slots
+    if len(urls) < want:
+        for url in _fetch(search_term, max_results=want * 2):
+            if url not in urls_seen:
+                urls_seen.add(url)
+                urls.append(url)
+
+    return urls[:want]
 
 
 # ── Download helpers ───────────────────────────────────────────────────────────
@@ -164,8 +186,7 @@ def score_logo(img: Image.Image, had_alpha: bool) -> float:
       +10   was RGBA with transparency (clean logo source)
       -40   photographic detail everywhere (all tiles high-variance)
       -20   high overall unique-color count (photo-like)
-      -15/-30  color fragmentation (many isolated color blobs = multi-logo collage)
-    Note: +25 top-4 DDG rank bonus is applied in process_brand, not here.
+      -8/-15   color fragmentation (many isolated color blobs = multi-logo collage)
     """
     img_rgb = img.convert("RGB")
     w, h = img_rgb.size
@@ -240,9 +261,9 @@ def score_logo(img: Image.Image, had_alpha: bool) -> float:
         v_mismatch = float((q_arr[:-1, :] != q_arr[1:, :]).mean())
         fragmentation = (h_mismatch + v_mismatch) / 2
         if fragmentation > 0.45:
-            score -= 30
-        elif fragmentation > 0.30:
             score -= 15
+        elif fragmentation > 0.30:
+            score -= 8
     except Exception:
         pass
 
@@ -305,8 +326,6 @@ def process_brand(
     scored: list = []
     for i, (img, had_alpha) in downloaded.items():
         s = score_logo(img, had_alpha)
-        if i < 4:
-            s += 25  # top-4 DDG result bonus
         scored.append((s, i, img, had_alpha))
     scored.sort(key=lambda x: -x[0])  # highest score first
 
@@ -395,7 +414,7 @@ def main() -> None:
     print(f"  Candidates   : up to {MAX_IMAGES * CANDIDATES_MUL} URLs per brand")
     print(f"  Dedup        : phash distance ≤ {HASH_DISTANCE}")
     print(f"  Skip if      : folder already has ≥ {SKIP_THRESHOLD} images")
-    print(f"  Rank bonus   : top-4 results get +25")
+    print(f"  Search order : clipart → general")
     print("-" * 68)
 
     for i, (name, term) in enumerate(brands, 1):
