@@ -1,14 +1,21 @@
-## $an, Anagrams
-A word is scrambled and people rush to find words in the letters
-
+# Image guessing games
 ## $ag, Animal Guesser
 Random animal is shown and the first to guess it wins
-
 ## $arg, Art Guesser
-Like animal guesser but with famous or influential visual artists, from a pool of 550
-
+550 artists, not so much a competition as a way to learn art history
 ## $bg, Brand Guesser
 Wow james is addicted to making guessing games. These ones get blurred and shuffled and stuff
+## $fg, Food Guesser
+Guess and learn about dishes around the world
+## $frg, Fruit Guesser
+Just like other guessers except with fruit
+## $rg, Retard Guesser
+Like animal guesser but with famous people, from a pool of 670
+
+# Word games
+
+## $an, Anagrams
+A word is scrambled and people rush to find words in the letters
 
 ## $cc, Caption Contest
 AI generated random new yorker style cartoon. Suggest a caption and ppl vote for the best
@@ -19,9 +26,6 @@ No winners in this one. you just take turns writing sentences to build a story. 
 ## $fw, Famous Words
 Famous quotes with one word missing, first to guess it wins
 
-## $fg, Fruit Guesser
-Just like animal guesser except with fruit
-
 ## $gf, Go Fast! (yeah i wish i had one)
 Bunch of different word/trivia teasers, first to type correct answer gets a point,first to 20 points wins
 
@@ -30,9 +34,6 @@ Gives you premise of a famous movie and first to guess it wins
 
 ## $mw, Multiplayer Wordle
 Regular wordle except anyone can guess the word. dont be a dick.
-
-## $rg, Retard Guesser
-Like animal guesser but with famous people, from a pool of 600+
 
 ## $rd @user, Rhyme Duel
 A word is posted and game goes back and forth until someone cant think of a rhyme

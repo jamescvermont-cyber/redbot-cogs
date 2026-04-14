@@ -60,6 +60,118 @@ FRUITS = [
     "Finger Lime",
 ]
 
+# ── Taste factoids ───────────────────────────────────────────────────────────
+
+FRUIT_TASTES = {
+    # Apples
+    "Apple":               "Sweet and slightly tart with a crisp, refreshing flavor — a mix of honey and mild citrus.",
+    "Fuji Apple":          "Exceptionally sweet and juicy with a honeyed flavor and very low acidity.",
+    "Honeycrisp Apple":    "A perfect balance of sweet and tart with notes of melon and honey.",
+    "Granny Smith Apple":  "Very tart and acidic with a sharp, refreshing sourness that lingers.",
+    "Gala Apple":          "Mild and sweet with a light floral aroma — like a softer, more delicate Fuji.",
+    "Braeburn Apple":      "A balanced mix of sweet and tart with hints of spice and pear.",
+    "Pink Lady Apple":     "Tangy-sweet with a fizzy, almost champagne-like effervescence.",
+    "McIntosh Apple":      "Soft, mildly tart, and aromatic with a wine-like depth.",
+    # Pears
+    "Pear":                "Sweet and buttery with a mild floral flavor and subtle vanilla notes.",
+    "Bartlett Pear":       "Very sweet and juicy with a classic pear flavor that's almost candy-like when ripe.",
+    "Asian Pear":          "Crisp like an apple but lightly sweet and floral with a subtle honey undertone.",
+    "Bosc Pear":           "Less sweet than most pears, with a spicy, earthy richness reminiscent of cinnamon.",
+    # Citrus
+    "Orange":              "Sweet and tangy with a bright, refreshing citrus flavor.",
+    "Blood Orange":        "Like a regular orange but with added raspberry-like berry notes and deeper sweetness.",
+    "Clementine":          "Very sweet and juicy with a mild, easy citrus flavor and almost no bitterness.",
+    "Tangerine":           "Sweet and tangy like an orange but more intense and slightly more tart.",
+    "Mandarin":            "Sweet, mild, and less acidic than oranges with a delicate floral note.",
+    "Grapefruit":          "Bittersweet and tangy with a bold, slightly bitter citrus punch.",
+    "Pomelo":              "Milder and less bitter than grapefruit with a sweet, floral citrus flavor.",
+    "Lemon":               "Intensely sour and acidic with a bright, sharp citrus flavor.",
+    "Lime":                "Sour and slightly more bitter than lemon with a distinctive tropical citrus edge.",
+    "Meyer Lemon":         "Sweeter and less acidic than regular lemon — like a lemon-mandarin hybrid.",
+    "Kumquat":             "The peel is sweet while the inside is tart and tangy — best eaten whole.",
+    "Yuzu":                "Sour like a lemon but with a unique floral, almost mandarin-like complexity.",
+    "Bergamot":            "Intensely fragrant with a bitter, floral citrus flavor — best known from Earl Grey tea.",
+    "Cara Cara Orange":    "Sweeter than regular oranges with a hint of cherry or raspberry.",
+    "Satsuma":             "Very sweet and easy to peel with almost no seeds and a mild, clean citrus flavor.",
+    "Ugli Fruit":          "Sweet and mildly tangy like a cross between a grapefruit, orange, and tangerine.",
+    # Berries
+    "Strawberry":          "Sweet with a slight tartness and a rich, jammy red-berry flavor.",
+    "Raspberry":           "Intensely tart and sweet with a bright, floral berry flavor.",
+    "Blueberry":           "Mildly sweet and slightly tart with an earthy, floral undertone.",
+    "Blackberry":          "Sweet and tart with a deep, jammy flavor and slight bitterness from the seeds.",
+    "Cranberry":           "Extremely tart and astringent with very little natural sweetness.",
+    "Gooseberry":          "Tart and tangy when unripe, turning sweet and muscat-like when fully ripe.",
+    "Boysenberry":         "A deep, winey blend of blackberry, raspberry, and loganberry sweetness.",
+    "Elderberry":          "Earthy and slightly tart with a floral, almost musky berry depth.",
+    "Mulberry":            "Sweet and slightly tart with a complex flavor reminiscent of blackberry and raspberry.",
+    "Huckleberry":         "Similar to blueberry but more intense, slightly tart, and earthier.",
+    "Lingonberry":         "Very tart and slightly bitter — like cranberry but with a more floral taste.",
+    "Cloudberry":          "Sweet and tart with a creamy flavor often compared to a mix of raspberry and apricot.",
+    "Acai":                "Earthy and slightly bitter with a taste often described as a blend of wild berry and dark chocolate.",
+    # Stone Fruits
+    "Peach":               "Sweet, juicy, and fragrant with honey and vanilla undertones when ripe.",
+    "Nectarine":           "Like a peach but with firmer flesh and a more intense, tangy sweetness.",
+    "Plum":                "Sweet with a pleasant tartness and a rich, jammy depth of flavor.",
+    "Cherry":              "Sweet and slightly tart with a deep, rich berry-like flavor.",
+    "Apricot":             "Sweet and tangy with a distinctive floral note and a slight almond-like richness.",
+    "Damson Plum":         "Very tart and astringent with an intensely rich, complex plum flavor.",
+    # Tropical (common)
+    "Banana":              "Sweet, creamy, and starchy with a mild tropical flavor that deepens as it ripens.",
+    "Plantain":            "Starchier and less sweet than banana, with a savory edge when green and caramel sweetness when ripe.",
+    "Pineapple":           "A bold mix of sweet and tart tropical flavor with bright, citrusy notes.",
+    "Mango":               "Intensely sweet with a rich, tropical flavor often compared to a peachy-floral blend.",
+    "Papaya":              "Mildly sweet with a musky, tropical flavor often described as a cross between peach and mango.",
+    "Coconut":             "Rich, creamy, and mildly sweet with a distinctive nutty, tropical flavor.",
+    "Guava":               "Sweet and slightly tart with a floral aroma — often described as a cross between pear and strawberry.",
+    "Passion Fruit":       "Intensely tart and tropical with a sweet, floral, citrusy complexity.",
+    "Dragon Fruit":        "Mild and slightly sweet with a subtle kiwi-like flavor and very little acidity.",
+    "Lychee":              "Sweet and floral with a fragrant, rose-like aroma and a texture like a peeled grape.",
+    "Longan":              "Similar to lychee but milder, with a subtly musky, honey-like sweetness.",
+    "Rambutan":            "Very similar to lychee but slightly less floral and a bit creamier in texture.",
+    "Jackfruit":           "Sweet and fruity with a flavor often compared to a mix of banana, mango, and pineapple.",
+    "Durian":              "Rich, creamy, and sweet with a custard-almond complexity — famous for its powerful pungent odor.",
+    "Mangosteen":          "Sweet and tangy with a delicate, floral flavor described as a mix of peach, strawberry, and citrus.",
+    "Starfruit":           "Mildly sweet and slightly sour with a crisp, juicy flavor reminiscent of apple and grape.",
+    # Tropical (less common)
+    "Soursop":             "Sweet and tangy with a creamy texture and a flavor blending pineapple, strawberry, and coconut.",
+    "Cherimoya":           "Incredibly sweet and creamy — often described as banana, pineapple, and vanilla custard combined.",
+    "Feijoa":              "Sweet and tart with a unique flavor described as a cross between pineapple, guava, and strawberry.",
+    "Tamarind":            "Intensely sour and tangy with a sweet, caramel-like depth.",
+    "Breadfruit":          "Starchy and mild when unripe, turning sweet and banana-like when fully ripe.",
+    "Ackee":               "Mild, buttery, and slightly nutty — its flavor is often compared to scrambled eggs.",
+    "Sapodilla":           "Very sweet and grainy like a pear, with a rich flavor of brown sugar and vanilla.",
+    "Sugar Apple":         "Intensely sweet and creamy with a custard-like texture and vanilla-coconut flavor.",
+    "Mamey Sapote":        "Sweet and creamy with a complex flavor blending pumpkin, sweet potato, and almond.",
+    "Jabuticaba":          "Sweet and grape-like with a jammy richness similar to muscadine grapes.",
+    # Melons
+    "Watermelon":          "Very sweet and refreshingly juicy with a light, watery sweetness.",
+    "Cantaloupe":          "Sweet and musky with a rich, floral honey flavor.",
+    "Honeydew Melon":      "Mildly sweet and very juicy with a light, floral taste and honey-like finish.",
+    "Canary Melon":        "Sweet and mildly tangy with a slight pear-like flavor and crisp, pale flesh.",
+    "Galia Melon":         "Sweet and aromatic, similar to cantaloupe but with a more tropical, slightly spicy edge.",
+    "Crenshaw Melon":      "Very sweet and buttery with a spicy-sweet richness that's fuller than most melons.",
+    # Grapes
+    "Grape":               "Sweet and juicy with a bright, slightly tart flavor — varies widely by variety.",
+    "Concord Grape":       "Bold, very sweet, and deeply grapey with the classic 'grape juice' flavor.",
+    "Moondrop Grape":      "Crisp and very sweet with a subtle cherry-like taste.",
+    "Cotton Candy Grape":  "Tastes remarkably like cotton candy — extremely sweet with almost no tartness.",
+    "Muscat Grape":        "Very aromatic and sweet with a distinctive floral, almost rose-like flavor.",
+    # Other common
+    "Kiwi":                "Tart and sweet with a bright, tropical flavor combining hints of strawberry and banana.",
+    "Golden Kiwi":         "Sweeter and less tart than green kiwi with a tropical, almost mango-like flavor.",
+    "Fig":                 "Very sweet and honey-like with a jammy, earthy depth and a subtle nutty note.",
+    "Date":                "Intensely sweet and caramel-like with hints of toffee and vanilla.",
+    "Pomegranate":         "Sweet and tart with a bright, tangy berry-like flavor and a slight astringency.",
+    "Avocado":             "Rich, creamy, and buttery with a mild, nutty flavor and almost no sweetness.",
+    "Persimmon":           "Sweet and honey-like when ripe with silky, almost pudding-like texture and cinnamon-spice notes.",
+    "Quince":              "Very astringent and tart when raw, but transforms into a sweet, rose-like flavor when cooked.",
+    "Loquat":              "Sweet and mildly tangy with a flavor combining peach, citrus, and mild cherry.",
+    "Currant":             "Very tart and sharp with a deep, earthy berry flavor.",
+    "Olive":               "Bitter and tangy with a rich, savory, briny quality — quite unlike most fruits.",
+    "Noni":                "Notoriously pungent and bitter with a strong, cheese-like flavor most people find unpleasant.",
+    "Finger Lime":         "Bursts of intensely sour citrus juice similar to lime, with a unique effervescent, caviar-like texture.",
+}
+
 # ── Image library ─────────────────────────────────────────────────────────────
 
 IMAGES_DIR = pathlib.Path(__file__).parent / "images"
@@ -275,6 +387,9 @@ class FruitGuesser(commands.Cog):
             description=f"Nobody guessed it. The fruit was **{fruit}**.",
             color=discord.Color(0x99aab5),
         )
+        taste = FRUIT_TASTES.get(fruit)
+        if taste:
+            embed.add_field(name="Taste", value=taste, inline=False)
         await channel.send(embed=embed, view=FruitPlayAgainView(self, channel.id))
 
     # ── Start game ────────────────────────────────────────────────────────────
