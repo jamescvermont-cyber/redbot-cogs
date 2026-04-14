@@ -36,6 +36,7 @@ Usage:
     python create_stages.py --test "Target"  # all 5 styles on Target img-001
 """
 
+import math
 import os
 import sys
 import random
@@ -46,8 +47,12 @@ from PIL import Image, ImageFilter
 SCRIPT_DIR = Path(__file__).parent
 IMAGES_DIR  = Path(os.environ.get("IMAGES_DIR", str(SCRIPT_DIR / "images")))
 
-DISPLAY_SIZE = (400, 400)   # all stage images standardized to this — 400 divides
-                             # evenly by 20 and 40, keeping block grids clean
+# Natural aspect ratio is preserved. Images are scaled so the longest side is
+# at most MAX_SIDE px, then padded (white) to a multiple of BLOCK_ALIGN so the
+# shuffle grid always divides evenly.
+MAX_SIDE    = 512
+BLOCK_ALIGN = 40   # shuffle block size; image dims are rounded up to multiples of this
+
 IMAGE_EXTS   = {".jpg", ".jpeg", ".png", ".webp"}
 STYLES       = ["shuffle", "pixel", "blur"]
 FIXED_STYLES = ["shuffle", "pixel", "blur"]   # assigned in order to images 1-3
@@ -55,28 +60,48 @@ NUM_STAGES   = 5
 
 # ── Style parameters ───────────────────────────────────────────────────────────
 
-# pixel / blob: intermediate downscale size (geometric ~1.7× each step)
+# pixel: downscale the image so its shortest side equals PIXEL_SIZES[i] px,
+# then upscale back — gives block-pixel effect at natural AR.
 PIXEL_SIZES = [8, 14, 24, 42, 72]
 
-# blur: Gaussian radius (geometric ~1.5× decrease: 45→30→20→13→9)
+# blur: Gaussian radius
 BLUR_RADII = [45, 30, 20, 13, 5]
 
-# shuffle: fraction of blocks that are back in their correct position
-# 0.0 = fully shuffled chaos; 0.85 = 15% still wrong at final stage
+# shuffle: fraction of blocks back in their correct position
 SHUFFLE_FIX_FRACTIONS = [0.0, 0.30, 0.55, 0.72, 0.85]
-SHUFFLE_BLOCK_SIZE    = 40   # 400/40 = 10×10 = 100 blocks
+SHUFFLE_BLOCK_SIZE    = 40   # must equal BLOCK_ALIGN
 
 # blackout: fraction of blocks that are VISIBLE (rest are black)
-# 0.10 = 90% blacked out at start; 0.80 = 20% still black at final stage
 BLACKOUT_REVEAL_FRACTIONS = [0.10, 0.28, 0.50, 0.68, 0.80]
-BLACKOUT_BLOCK_SIZE       = 20   # 400/20 = 20×20 = 400 blocks
+BLACKOUT_BLOCK_SIZE       = 20
+
+
+# ── Image preparation ─────────────────────────────────────────────────────────
+
+def _prepare_image(img_path: Path) -> Image.Image:
+    """Load image, scale to MAX_SIDE maintaining aspect ratio, pad to BLOCK_ALIGN."""
+    img = Image.open(img_path).convert("RGB")
+    img.thumbnail((MAX_SIDE, MAX_SIDE), Image.LANCZOS)
+    w, h = img.size
+    new_w = math.ceil(w / BLOCK_ALIGN) * BLOCK_ALIGN
+    new_h = math.ceil(h / BLOCK_ALIGN) * BLOCK_ALIGN
+    if new_w != w or new_h != h:
+        canvas = Image.new("RGB", (new_w, new_h), (255, 255, 255))
+        canvas.paste(img, (0, 0))
+        img = canvas
+    return img
 
 
 # ── Stage generators ───────────────────────────────────────────────────────────
 
 def stage_pixel(img: Image.Image, small_size: int) -> Image.Image:
-    small = img.resize((small_size, small_size), Image.BOX)
-    return small.resize(DISPLAY_SIZE, Image.NEAREST)
+    """Pixelate by scaling down so the shortest side ≈ small_size, then back up."""
+    w, h = img.size
+    scale = small_size / min(w, h)
+    sw = max(1, round(w * scale))
+    sh = max(1, round(h * scale))
+    small = img.resize((sw, sh), Image.BOX)
+    return small.resize((w, h), Image.NEAREST)
 
 
 def stage_blur(img: Image.Image, radius: float) -> Image.Image:
@@ -96,9 +121,9 @@ def stage_shuffle(img: Image.Image, fix_fraction: float, seed: int) -> Image.Ima
     blocks correctly placed at each step.
     """
     bs = SHUFFLE_BLOCK_SIZE
-    cols = DISPLAY_SIZE[0] // bs   # 10
-    rows = DISPLAY_SIZE[1] // bs   # 10
-    n    = cols * rows              # 100
+    cols = img.width  // bs
+    rows = img.height // bs
+    n    = cols * rows
 
     # Extract all blocks
     blocks = []
@@ -138,9 +163,9 @@ def stage_blackout(img: Image.Image, reveal_fraction: float, seed: int) -> Image
     are always a subset of later stages'.
     """
     bs   = BLACKOUT_BLOCK_SIZE
-    cols = DISPLAY_SIZE[0] // bs   # 20
-    rows = DISPLAY_SIZE[1] // bs   # 20
-    n    = cols * rows              # 400
+    cols = img.width  // bs
+    rows = img.height // bs
+    n    = cols * rows
 
     n_reveal = int(n * reveal_fraction)
 
@@ -212,8 +237,7 @@ def generate_stages_for_image(
 
     stages_dir.mkdir(exist_ok=True)
 
-    img  = Image.open(img_path).convert("RGB")
-    img  = img.resize(DISPLAY_SIZE, Image.LANCZOS)
+    img  = _prepare_image(img_path)
     seed = _image_seed(img_path)
 
     for stage_num in range(1, NUM_STAGES + 1):
@@ -294,8 +318,7 @@ def test_mode(brand_hint: str = "") -> None:
     out_dir = IMAGES_DIR / "_test_comparison"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    img  = Image.open(test_img).convert("RGB")
-    img  = img.resize(DISPLAY_SIZE, Image.LANCZOS)
+    img  = _prepare_image(test_img)
     seed = _image_seed(test_img)
 
     for style in STYLES:
