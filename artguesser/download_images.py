@@ -2,23 +2,32 @@
 """
 download_images.py — populate artist image folders for ArtGuesser.
 
-Fetches artwork images per artist via DuckDuckGo Images using each artist's
-`image_search_term` from the database (e.g. "Rembrandt paintings" rather than
-just the artist name, to avoid portraits of the artist).
+Strategy:
+  1. Search DuckDuckGo for many candidate URLs per artist (using the
+     artist's image_search_term from artists.py — e.g. "Rembrandt paintings"
+     — to get artworks rather than portraits).
+  2. Download all candidates in parallel (fast) while tracking each URL's
+     original search-result position.
+  3. Walk results in original search-rank order. Accept each image only if it
+     is not too visually similar to any already-accepted image (perceptual hash
+     comparison). The first result is preferred — DuckDuckGo's ranking is
+     assumed to surface the best-quality copy of each artwork first.
+  4. Stop once we have MAX_IMAGES. Save as img-001.jpg … img-NNN.jpg.
+
+This means: when two images are near-duplicates (same artwork, different
+source/crop/resolution), we always keep the earlier-ranked one and discard
+the later.
 
 Usage:
     python download_images.py              # all artists
     python download_images.py 50           # first N artists
-    python download_images.py "Van Gogh"   # single artist by name (substring match)
+    python download_images.py "Van Gogh"   # single artist (substring match)
 
-Output path (default: local images/):
-    images/{Artist Name}/img-001.jpg
-    ...
+Output path default: images/ next to this script.
+Set IMAGES_DIR env var to override, e.g.:
+    IMAGES_DIR=/var/www/html/artimages python download_images.py
 
-To save directly to VPS nginx folder, set IMAGES_DIR env var or edit the
-IMAGES_DIR constant below to /var/www/html/artimages/ (when running on VPS).
-
-Re-runnable: folders with >= SKIP_THRESHOLD images are skipped.
+Re-runnable: artists with >= SKIP_THRESHOLD images are skipped entirely.
 """
 
 import io
@@ -26,7 +35,7 @@ import os
 import sys
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
 import posixpath
@@ -37,28 +46,37 @@ import imagehash
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).parent
-
-# Override with env var IMAGES_DIR (e.g. /var/www/html/artimages on VPS)
 IMAGES_DIR = Path(os.environ.get("IMAGES_DIR", str(SCRIPT_DIR / "images")))
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-IMAGES_PER_ARTIST  = 20       # target images per artist (fetch 3x as candidates)
-SKIP_THRESHOLD     = 12       # skip folder if already has >= this many images
-DELAY_BETWEEN      = 2        # seconds between artists
-DOWNLOAD_WORKERS   = 8        # parallel downloads per artist
-DOWNLOAD_TIMEOUT   = 20       # seconds per request
-MIN_DIMENSION      = 300      # pixels — both width and height must meet this
-MIN_FILE_BYTES     = 8_000
-MAX_ASPECT_RATIO   = 4.0      # skip if w/h > 4 or h/w > 4
-HASH_DISTANCE      = 10       # phash distance threshold for duplicate detection
+MAX_IMAGES       = 18    # keep at most this many per artist
+MIN_IMAGES       = 13    # skip artist folder if already has >= this many
+SKIP_THRESHOLD   = MIN_IMAGES
+
+CANDIDATES_MUL   = 5     # fetch MAX_IMAGES * this many candidate URLs
+DELAY_BETWEEN    = 3     # seconds between artists (be polite to DDG)
+DOWNLOAD_WORKERS = 10    # parallel download threads per artist
+DOWNLOAD_TIMEOUT = 20    # seconds per HTTP request
+
+MIN_DIMENSION    = 300   # both W and H must be >= this (pixels)
+MIN_FILE_BYTES   = 8_000
+MAX_ASPECT_RATIO = 4.0   # skip panoramic/icon-like images
+
+# Perceptual hash dedup: phash distance scale —
+#   0   = pixel-identical
+#   1–5 = same image, different compression/tiny crop
+#   6–10= same painting, different scan/photo quality
+#   11+ = likely different artworks
+# We reject a new image if it's within HASH_DISTANCE of any accepted image.
+HASH_DISTANCE    = 10
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
-# URL substrings that indicate non-artwork (merch, icons, etc.)
 SKIP_URL_FRAGMENTS = {
     "logo", "icon", "banner", "merch", "shop", "store",
     "tshirt", "tee", "mug", "poster-print",
     "redbubble", "teepublic", "zazzle", "amazon",
+    "thumbnail", "thumb", "avatar",
 }
 
 HEADERS = {
@@ -72,29 +90,24 @@ HEADERS = {
 
 # ── Artist list ────────────────────────────────────────────────────────────────
 def load_artists() -> list:
-    """
-    Returns list of (name, search_term) tuples from the ARTISTS dict.
-    Falls back to "{name} paintings" if no image_search_term is set.
-    """
+    """Returns [(name, search_term), ...] from the ARTISTS dict in artists.py."""
     try:
         from artists import ARTISTS
     except ImportError:
+        sys.path.insert(0, str(SCRIPT_DIR))
         try:
-            import sys
-            sys.path.insert(0, str(Path(__file__).parent))
             from artists import ARTISTS
         except ImportError:
             print("ERROR: artists.py not found or missing ARTISTS dict.")
             sys.exit(1)
 
-    result = []
-    for name, data in ARTISTS.items():
-        search_term = data.get("image_search_term") or f"{name} paintings"
-        result.append((name, search_term))
-    return result
+    return [
+        (name, data.get("image_search_term") or f"{name} paintings")
+        for name, data in ARTISTS.items()
+    ]
 
 
-# ── DDGS session ───────────────────────────────────────────────────────────────
+# ── DDGS (shared, thread-safe) ─────────────────────────────────────────────────
 _ddgs = None
 _ddgs_lock = threading.Lock()
 
@@ -119,45 +132,42 @@ def existing_count(folder: Path) -> int:
 
 
 def ext_from_url(url: str) -> str:
-    path = urlparse(url).path
-    _, ext = posixpath.splitext(path)
+    _, ext = posixpath.splitext(urlparse(url).path)
     ext = ext.lower().split("?")[0]
-    if ext in (".jpeg", ".jpg"):
-        return ".jpg"
-    if ext in (".png", ".gif", ".webp"):
-        return ext
-    return ".jpg"
+    return ext if ext in (".png", ".gif", ".webp") else ".jpg"
 
 
 def url_is_blocked(url: str) -> bool:
-    lower = url.lower()
-    return any(frag in lower for frag in SKIP_URL_FRAGMENTS)
+    low = url.lower()
+    return any(frag in low for frag in SKIP_URL_FRAGMENTS)
 
 
-def search_images(search_term: str, count: int) -> list:
+def search_images(search_term: str, want: int) -> list:
+    """Return up to `want` image URLs from DDG, retrying on error."""
     for attempt in range(3):
         try:
-            ddgs = _get_ddgs()
-            results = list(ddgs.images(search_term, max_results=count * 3))
-            urls = [r["image"] for r in results if r.get("image")]
-            return urls[:count * 3]
+            results = list(_get_ddgs().images(search_term, max_results=want))
+            return [r["image"] for r in results if r.get("image")][:want]
         except Exception as exc:
             wait = (attempt + 1) * 5
-            print(f"\n      [Search error attempt {attempt+1}] {search_term!r}: {exc} — retrying in {wait}s")
+            print(f"\n  [DDG error #{attempt+1}] {exc!r} — waiting {wait}s", flush=True)
             time.sleep(wait)
     return []
 
 
-def fetch_and_validate(url: str):
-    """Download url, run quality checks. Returns (raw_bytes, pil_image) or None."""
+def fetch_and_hash(url: str):
+    """
+    Download url and compute its perceptual hash.
+    Returns (raw_bytes, phash_obj) on success, None on any failure.
+    Applies quality filters: size, dimensions, aspect ratio, content-type.
+    """
     if url_is_blocked(url):
         return None
     try:
         r = requests.get(url, headers=HEADERS, timeout=DOWNLOAD_TIMEOUT, stream=True)
         if r.status_code != 200:
             return None
-        content_type = r.headers.get("content-type", "")
-        if "image" not in content_type:
+        if "image" not in r.headers.get("content-type", ""):
             return None
         data = r.content
         if len(data) < MIN_FILE_BYTES:
@@ -166,83 +176,77 @@ def fetch_and_validate(url: str):
         w, h = img.size
         if w < MIN_DIMENSION or h < MIN_DIMENSION:
             return None
-        ratio = max(w, h) / min(w, h)
-        if ratio > MAX_ASPECT_RATIO:
+        if max(w, h) / min(w, h) > MAX_ASPECT_RATIO:
             return None
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
-        return data, img
+        ph = imagehash.phash(img)
+        return data, ph
     except Exception:
         return None
 
 
-# ── Per-artist processor ───────────────────────────────────────────────────────
+# ── Core: process one artist ──────────────────────────────────────────────────
 def process_artist(artist_name: str, search_term: str, idx: int, total: int) -> int:
     folder = IMAGES_DIR / artist_name
-    count = existing_count(folder)
+    existing = existing_count(folder)
 
-    if count >= SKIP_THRESHOLD:
-        print(f"[{idx:3d}/{total}] {artist_name:<40} skip ({count} images present)")
-        return count
+    if existing >= SKIP_THRESHOLD:
+        print(f"[{idx:3d}/{total}] {artist_name:<42} skip  ({existing} images)")
+        return existing
 
     folder.mkdir(parents=True, exist_ok=True)
-    print(f"[{idx:3d}/{total}] {artist_name:<40} searching: {search_term!r}", end="", flush=True)
 
-    urls = search_images(search_term, IMAGES_PER_ARTIST)
+    # ── Phase 1: search ───────────────────────────────────────────────────────
+    want = MAX_IMAGES * CANDIDATES_MUL
+    print(f"[{idx:3d}/{total}] {artist_name:<42} searching...", end="", flush=True)
+    urls = search_images(search_term, want)
     if not urls:
-        print(" — no results")
+        print(" no results")
         return 0
+    print(f" {len(urls)} URLs | downloading...", end="", flush=True)
 
-    print(f" | {len(urls)} URLs found, downloading...", end="", flush=True)
+    # ── Phase 2: parallel download + hash ─────────────────────────────────────
+    # We need original URL index to pick best (earliest = highest-ranked) copy
+    # when duplicates appear, so store results keyed by index.
+    downloaded: dict = {}   # {original_url_index: (raw_bytes, phash)}
 
-    save_lock = threading.Lock()
-    saved_count = [0]
-    seen_hashes: list = []
-
-    def try_download(url: str) -> bool:
-        with save_lock:
-            if saved_count[0] >= IMAGES_PER_ARTIST:
-                return False
-
-        result = fetch_and_validate(url)
-        if result is None:
-            return False
-
-        data, img = result
-
-        try:
-            ph = imagehash.phash(img)
-        except Exception:
-            return False
-
-        with save_lock:
-            if saved_count[0] >= IMAGES_PER_ARTIST:
-                return False
-            for existing_hash in seen_hashes:
-                if abs(ph - existing_hash) < HASH_DISTANCE:
-                    return False  # duplicate
-            slot = saved_count[0] + 1
-            saved_count[0] = slot
-            seen_hashes.append(ph)
-
-        ext = ext_from_url(url)
-        dest = folder / f"img-{slot:03d}{ext}"
-        try:
-            dest.write_bytes(data)
-            return True
-        except Exception:
-            with save_lock:
-                saved_count[0] -= 1
-                seen_hashes.remove(ph)
-            return False
+    def _fetch(i_url):
+        i, url = i_url
+        result = fetch_and_hash(url)
+        return i, result
 
     with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
-        list(pool.map(try_download, urls))
+        futures = {pool.submit(_fetch, (i, u)): i for i, u in enumerate(urls)}
+        for future in as_completed(futures):
+            i, result = future.result()
+            if result is not None:
+                downloaded[i] = result
 
-    saved = saved_count[0]
-    note = "  *** NO IMAGES ***" if saved == 0 else ""
-    print(f" {saved} saved{note}")
-    return saved
+    print(f" {len(downloaded)} valid |", end="", flush=True)
+
+    # ── Phase 3: deduplicate in original search-rank order ────────────────────
+    # Walk from lowest index (best DDG rank) to highest. Accept an image only
+    # if it is not too similar to any already-accepted image.
+    accepted: list = []   # [(raw_bytes, phash), ...]
+
+    for i in sorted(downloaded.keys()):
+        if len(accepted) >= MAX_IMAGES:
+            break
+        data, ph = downloaded[i]
+        if any(abs(ph - a_ph) <= HASH_DISTANCE for _, a_ph in accepted):
+            continue    # near-duplicate of an already-accepted (higher-ranked) image
+        accepted.append((data, ph))
+
+    # ── Phase 4: save ─────────────────────────────────────────────────────────
+    for slot, (data, _) in enumerate(accepted, 1):
+        dest = folder / f"img-{slot:03d}.jpg"
+        dest.write_bytes(data)
+
+    kept = len(accepted)
+    note = "  *** NONE ***" if kept == 0 else ""
+    print(f" kept {kept}/{len(downloaded)}{note}")
+    return kept
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -263,23 +267,25 @@ def main() -> None:
     else:
         artists = all_artists
 
-    print("ArtGuesser — image downloader (DuckDuckGo Images)")
-    print(f"  Artists   : {len(artists)} (of {len(all_artists)} total)")
-    print(f"  Output    : {IMAGES_DIR}")
-    print(f"  Per artist: {IMAGES_PER_ARTIST} images (target)")
-    print(f"  Skip if   : >= {SKIP_THRESHOLD} images already present")
-    print(f"  Min size  : {MIN_DIMENSION}x{MIN_DIMENSION}px, {MIN_FILE_BYTES} bytes")
-    print(f"  Hash dedup: phash distance < {HASH_DISTANCE}")
-    print("  Note      : Uses image_search_term from artists.py for each artist")
-    print("-" * 60)
+    print("ArtGuesser — image downloader")
+    print(f"  Artists      : {len(artists)} (of {len(all_artists)} total)")
+    print(f"  Output       : {IMAGES_DIR}")
+    print(f"  Target range : {MIN_IMAGES}–{MAX_IMAGES} images per artist")
+    print(f"  Candidates   : up to {MAX_IMAGES * CANDIDATES_MUL} URLs fetched per artist")
+    print(f"  Dedup        : phash distance ≤ {HASH_DISTANCE} → keep earliest-ranked copy")
+    print(f"  Skip if      : folder already has ≥ {SKIP_THRESHOLD} images")
+    print("-" * 68)
 
-    for i, (artist_name, search_term) in enumerate(artists, 1):
-        process_artist(artist_name, search_term, i, len(artists))
+    for i, (name, term) in enumerate(artists, 1):
+        process_artist(name, term, i, len(artists))
         if i < len(artists):
             time.sleep(DELAY_BETWEEN)
 
-    print("\nDone! Review images/<Artist>/ and delete any bad photos.")
-    print(f"To deploy to VPS: rsync -avz images/ ubuntu@150.136.40.239:/var/www/html/artimages/")
+    print("\nDone.")
+    if str(IMAGES_DIR) != str(SCRIPT_DIR / "images"):
+        pass  # already writing to VPS path
+    else:
+        print(f"To sync to VPS: rsync -avz --progress images/ ubuntu@150.136.40.239:/var/www/html/artimages/")
 
 
 if __name__ == "__main__":
