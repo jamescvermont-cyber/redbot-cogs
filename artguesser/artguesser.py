@@ -174,7 +174,7 @@ class ArtGuesser(commands.Cog):
         desc = (
             f"## {game.display_name}\n"
             f"{meta_line}\n\n"
-            f"Type **`h`** for a hint  ·  Type **`n`** for new images"
+            f"Type **`h`** for a hint  ·  Type **`n`** for new images  ·  Type **`s`** to skip"
         )
 
         embed = discord.Embed(
@@ -303,6 +303,19 @@ class ArtGuesser(commands.Cog):
                 await message.channel.send("No more new images available!")
                 return
             await self._send_images(message.channel, game, chosen)
+            return
+
+        # ── s: skip (reveal answer and start new game) ───────────────────────
+        if lower == "s":
+            old = self.games.pop(message.channel.id)
+            old.task.cancel()
+            embed = discord.Embed(
+                title="Skipped!",
+                description=f"The artist was **{old.artist['name']}**.",
+                color=discord.Color(0x99aab5),
+            )
+            await message.channel.send(embed=embed)
+            await self._start_game(message.channel)
             return
 
         # ── h: hint ───────────────────────────────────────────────────────────
