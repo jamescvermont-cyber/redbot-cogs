@@ -13,7 +13,6 @@ Just like other guessers except with fruit
 Like animal guesser but with famous people, from a pool of 670
 
 # Word games
-
 ## $an, Anagrams
 A word is scrambled and people rush to find words in the letters
 ## $cc, Caption Contest
@@ -27,7 +26,7 @@ Bunch of different word/trivia teasers, first to type correct answer gets a poin
 ## $mg, Movie Guesser
 Gives you premise of a famous movie and first to guess it wins
 ## $mw, Multiplayer Wordle
-Regular wordle except anyone can guess the word. dont be a dick.
+Regular wordle except anyone can guess the word. dont be a dick. You can do $wordle if you really want regular wordle
 ## $rd @user, Rhyme Duel
 A word is posted and game goes back and forth until someone cant think of a rhyme
 ## $sh, Spell Hell
