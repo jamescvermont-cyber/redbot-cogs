@@ -38,6 +38,9 @@ _KEY_COLOR_MAP = {"green": _KEY_CORRECT, "yellow": _KEY_PRESENT, "gray": _KEY_AB
 
 _KEYBOARD_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"]
 
+_SOLO_MAX_GUESSES  = 5   # classic Wordle: only the starter guesses
+_MULTI_MAX_GUESSES = 6   # multiplayer: anyone can guess
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,7 +105,7 @@ def _score_guess(guess: str, answer: str) -> list:
     return result
 
 
-def _draw_board(guesses: list, total_rows: int = 6) -> io.BytesIO:
+def _draw_board(guesses: list, total_rows: int) -> io.BytesIO:
     """Render the Wordle grid + alphabet keyboard and return it as a PNG byte-stream."""
     cols = 5
 
@@ -172,12 +175,11 @@ def _draw_board(guesses: list, total_rows: int = 6) -> io.BytesIO:
 # ── Game state ────────────────────────────────────────────────────────────────
 
 class WordleGame:
-    MAX_GUESSES = 6
-
-    def __init__(self, word: str):
-        self.word    = word.upper()
-        self.guesses = []   # list of (WORD, [colour, …])
-        self.won     = False
+    def __init__(self, word: str, max_guesses: int):
+        self.word        = word.upper()
+        self.max_guesses = max_guesses
+        self.guesses     = []   # list of (WORD, [colour, …])
+        self.won         = False
 
     def submit(self, guess: str) -> list:
         guess  = guess.upper()
@@ -189,52 +191,82 @@ class WordleGame:
 
     @property
     def over(self) -> bool:
-        return self.won or len(self.guesses) >= self.MAX_GUESSES
+        return self.won or len(self.guesses) >= self.max_guesses
 
     @property
     def remaining(self) -> int:
-        return self.MAX_GUESSES - len(self.guesses)
+        return self.max_guesses - len(self.guesses)
 
 
 # ── Cog ───────────────────────────────────────────────────────────────────────
 
 class Wordle(commands.Cog):
-    """Multiplayer Wordle — anyone in chat can guess the 5-letter word."""
+    """Wordle games — solo ($wordle) and multiplayer ($mwordle)."""
 
     def __init__(self, bot):
-        self.bot   = bot
-        self.games: dict = {}   # channel_id → WordleGame
+        self.bot        = bot
+        self.solo_games:  dict = {}   # channel_id → (WordleGame, starter_id)
+        self.multi_games: dict = {}   # channel_id → WordleGame
+
+    def _any_game(self, channel_id: int) -> bool:
+        return channel_id in self.solo_games or channel_id in self.multi_games
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
     @commands.command()
     async def wordle(self, ctx: commands.Context):
-        """Start a multiplayer Wordle game in this channel."""
-        if ctx.channel.id in self.games:
+        """Start a solo Wordle game. Only you can submit guesses."""
+        if self._any_game(ctx.channel.id):
             await ctx.send("A Wordle game is already running here.")
             return
 
         word = random.choice(WORDS).upper()
-        self.games[ctx.channel.id] = WordleGame(word)
+        game = WordleGame(word, max_guesses=_SOLO_MAX_GUESSES)
+        self.solo_games[ctx.channel.id] = (game, ctx.author.id)
         await ctx.send(
-            "**Wordle started!** Guess the 5-letter word.\n"
-            f"You have **{WordleGame.MAX_GUESSES} guesses** — anyone can play!\n"
+            f"**Wordle started!** Good luck, {ctx.author.mention}!\n"
+            f"Guess the 5-letter word. You have **{_SOLO_MAX_GUESSES} guesses** — only you can play.\n"
+            "Just type any 5-letter word in chat."
+        )
+
+    @commands.command()
+    async def mwordle(self, ctx: commands.Context):
+        """Start a multiplayer Wordle game — anyone in chat can guess."""
+        if self._any_game(ctx.channel.id):
+            await ctx.send("A Wordle game is already running here.")
+            return
+
+        word = random.choice(WORDS).upper()
+        game = WordleGame(word, max_guesses=_MULTI_MAX_GUESSES)
+        self.multi_games[ctx.channel.id] = game
+        await ctx.send(
+            "**Multiplayer Wordle started!** Guess the 5-letter word.\n"
+            f"You have **{_MULTI_MAX_GUESSES} guesses** — anyone can play!\n"
             "Just type any 5-letter word in chat."
         )
 
     async def force_stop_game(self, channel_id: int):
         """Stop any active game in channel_id. Returns game name if stopped, else None."""
-        game = self.games.pop(channel_id, None)
-        return "Wordle" if game is not None else None
+        if channel_id in self.solo_games:
+            del self.solo_games[channel_id]
+            return "Wordle"
+        if channel_id in self.multi_games:
+            del self.multi_games[channel_id]
+            return "Wordle"
+        return None
 
     # ── Guess listener ────────────────────────────────────────────────────────
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignore bots and channels with no active game
         if message.author.bot:
             return
-        if message.channel.id not in self.games:
+
+        channel_id = message.channel.id
+        in_solo  = channel_id in self.solo_games
+        in_multi = channel_id in self.multi_games
+
+        if not in_solo and not in_multi:
             return
 
         word = message.content.strip()
@@ -243,32 +275,61 @@ class Wordle(commands.Cog):
         if len(word) != 5 or not word.isalpha():
             return
 
-        # Don't steal bot commands (e.g. `$wordle stop`)
+        # Don't steal bot commands (e.g. `$wordle`, `$mwordle`)
         ctx = await self.bot.get_context(message)
         if ctx.valid:
             return
 
-        game   = self.games[message.channel.id]
-        result = game.submit(word)
-        buf    = _draw_board(game.guesses, total_rows=WordleGame.MAX_GUESSES)
-        file   = discord.File(buf, filename="wordle.png")
+        if in_solo:
+            game, starter_id = self.solo_games[channel_id]
+            if message.author.id != starter_id:
+                return   # silently ignore — only the starter may guess
+            result = game.submit(word)
+            buf    = _draw_board(game.guesses, total_rows=game.max_guesses)
+            file   = discord.File(buf, filename="wordle.png")
 
-        if game.won:
-            del self.games[message.channel.id]
-            await message.channel.send(
-                f"Congratulations {message.author.mention}! "
-                f"The word was **{game.word}** — solved in "
-                f"**{len(game.guesses)}** guess(es)!",
-                file=file,
-            )
-        elif game.over:
-            del self.games[message.channel.id]
-            await message.channel.send(
-                f"No more guesses! The word was **{game.word}**.",
-                file=file,
-            )
-        else:
-            await message.channel.send(
-                f"**{game.remaining}** guess(es) remaining.",
-                file=file,
-            )
+            if game.won:
+                del self.solo_games[channel_id]
+                await message.channel.send(
+                    f"Congratulations {message.author.mention}! "
+                    f"The word was **{game.word}** — solved in "
+                    f"**{len(game.guesses)}** guess(es)!",
+                    file=file,
+                )
+            elif game.over:
+                del self.solo_games[channel_id]
+                await message.channel.send(
+                    f"No more guesses! The word was **{game.word}**.",
+                    file=file,
+                )
+            else:
+                await message.channel.send(
+                    f"**{game.remaining}** guess(es) remaining.",
+                    file=file,
+                )
+
+        else:  # multiplayer
+            game   = self.multi_games[channel_id]
+            result = game.submit(word)
+            buf    = _draw_board(game.guesses, total_rows=game.max_guesses)
+            file   = discord.File(buf, filename="wordle.png")
+
+            if game.won:
+                del self.multi_games[channel_id]
+                await message.channel.send(
+                    f"Congratulations {message.author.mention}! "
+                    f"The word was **{game.word}** — solved in "
+                    f"**{len(game.guesses)}** guess(es)!",
+                    file=file,
+                )
+            elif game.over:
+                del self.multi_games[channel_id]
+                await message.channel.send(
+                    f"No more guesses! The word was **{game.word}**.",
+                    file=file,
+                )
+            else:
+                await message.channel.send(
+                    f"**{game.remaining}** guess(es) remaining.",
+                    file=file,
+                )
