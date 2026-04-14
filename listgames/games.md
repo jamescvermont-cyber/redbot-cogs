@@ -4,6 +4,9 @@ A word is scrambled and people rush to find words in the letters
 ## $ag, Animal Guesser
 Random animal is shown and the first to guess it wins
 
+## $arg, Art Guesser
+Like animal guesser but with famous or influential visual artists, from a pool of 545.
+
 ## $cc, Caption Contest
 AI generated random new yorker style cartoon. Suggest a caption and ppl vote for the best
 
@@ -24,6 +27,11 @@ Gives you premise of a famous movie and first to guess it wins
 
 ## $mw, Multiplayer Wordle
 Regular wordle except anyone can guess the word. dont be a dick.
+
+
+## $rg, Retard Guesser
+Like animal guesser but with famous people, from a pool of 607.
+
 
 ## $rd @user, Rhyme Duel
 A word is posted and game goes back and forth until someone cant think of a rhyme
