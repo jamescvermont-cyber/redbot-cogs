@@ -206,7 +206,7 @@ class RetardGuesser(commands.Cog):
             description=(
                 f"Randomly chosen from **{TOTAL_PEOPLE:,}** famous people.\n\n"
                 f"Type **`n`** — another photo (up to {MAX_EXTRA_IMAGES} extra)\n"
-                f"Type **`h`** — show a hint\n"
+                f"Type **`h`** — show a hint, **`s`** — skip\n"
                 f"You have **{TIMEOUT_SECONDS} seconds**!"
             ),
             color=discord.Color.blurple(),
@@ -320,6 +320,22 @@ class RetardGuesser(commands.Cog):
 
             game.hint_index += 1
             await message.channel.send(embed=embed)
+            return
+
+        # ── s: skip ──────────────────────────────────────────────────────────
+        if lower == "s":
+            game.task.cancel()
+            del self.games[message.channel.id]
+            embed = discord.Embed(
+                title="Skipped!",
+                description=(
+                    f"The answer was **{game.person['name']}**.\n"
+                    "Starting a new game..."
+                ),
+                color=discord.Color.orange(),
+            )
+            await message.channel.send(embed=embed)
+            await self._start_game(message.channel)
             return
 
         # ── Guess ─────────────────────────────────────────────────────────────
