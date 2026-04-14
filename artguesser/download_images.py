@@ -32,6 +32,7 @@ Re-runnable: artists with >= SKIP_THRESHOLD images are skipped entirely.
 
 import io
 import os
+import random
 import sys
 import time
 import threading
@@ -54,7 +55,9 @@ MIN_IMAGES       = 13    # skip artist folder if already has >= this many
 SKIP_THRESHOLD   = MIN_IMAGES
 
 CANDIDATES_MUL   = 5     # fetch MAX_IMAGES * this many candidate URLs
-DELAY_BETWEEN    = 5     # seconds between artists (be polite to DDG)
+DELAY_MIN        = 3     # jittered delay between artists — random between MIN and MAX
+DELAY_MAX        = 7     # keeps the gap unpredictable, harder for DDG to pattern-match
+DDG_TIMEOUT      = 25    # seconds before giving up on a DDG search response
 DOWNLOAD_WORKERS = 10    # parallel download threads per artist
 DOWNLOAD_TIMEOUT = 20    # seconds per HTTP request
 
@@ -107,21 +110,14 @@ def load_artists() -> list:
     ]
 
 
-# ── DDGS (shared, thread-safe) ─────────────────────────────────────────────────
-_ddgs = None
-_ddgs_lock = threading.Lock()
-
-
-def _get_ddgs():
-    global _ddgs
-    with _ddgs_lock:
-        if _ddgs is None:
-            try:
-                from ddgs import DDGS
-            except ImportError:
-                from duckduckgo_search import DDGS
-            _ddgs = DDGS()
-        return _ddgs
+# ── DDGS — fresh instance per search to avoid session-based rate limits ────────
+def _new_ddgs():
+    """Always returns a fresh DDGS instance with its own session/VQD token."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+    return DDGS(timeout=DDG_TIMEOUT)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -143,10 +139,14 @@ def url_is_blocked(url: str) -> bool:
 
 
 def search_images(search_term: str, want: int) -> list:
-    """Return up to `want` image URLs from DDG, retrying on error."""
+    """
+    Return up to `want` image URLs from DDG.
+    Each attempt uses a fresh DDGS instance (new session/VQD token) so a
+    rate-limited session doesn't poison retries.
+    """
     for attempt in range(3):
         try:
-            results = list(_get_ddgs().images(search_term, max_results=want))
+            results = list(_new_ddgs().images(search_term, max_results=want))
             return [r["image"] for r in results if r.get("image")][:want]
         except Exception as exc:
             wait = (attempt + 1) * 5
@@ -274,12 +274,13 @@ def main() -> None:
     print(f"  Candidates   : up to {MAX_IMAGES * CANDIDATES_MUL} URLs fetched per artist")
     print(f"  Dedup        : phash distance ≤ {HASH_DISTANCE} → keep earliest-ranked copy")
     print(f"  Skip if      : folder already has ≥ {SKIP_THRESHOLD} images")
+    print(f"  DDG delay    : {DELAY_MIN}–{DELAY_MAX}s jittered, fresh session each search")
     print("-" * 68)
 
     for i, (name, term) in enumerate(artists, 1):
         process_artist(name, term, i, len(artists))
         if i < len(artists):
-            time.sleep(DELAY_BETWEEN)
+            time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
 
     print("\nDone.")
     if str(IMAGES_DIR) != str(SCRIPT_DIR / "images"):
