@@ -53,6 +53,12 @@ def _normalize(text: str) -> str:
     return no_punct.strip()
 
 
+def _last_name(full_name: str) -> str:
+    """Return the last word of the name (for last-name-only guessing)."""
+    parts = full_name.split()
+    return parts[-1] if parts else full_name
+
+
 def _scramble(name: str) -> str:
     """Scramble each word of the name independently."""
     return " ".join(
@@ -285,7 +291,10 @@ class RetardGuesser(commands.Cog):
             return
 
         # ── Guess ─────────────────────────────────────────────────────────────
-        if _normalize(content) != _normalize(game.person["name"]):
+        guess = _normalize(content)
+        full  = _normalize(game.person["name"])
+        last  = _normalize(_last_name(game.person["name"]))
+        if guess != full and guess != last:
             return
 
         # Correct answer!
