@@ -294,8 +294,8 @@ class ArtGuesser(commands.Cog):
             description=(
                 "Who created this artwork? Type your guess in chat!\n"
                 "You have **90 seconds**.\n\n"
-                "`$img` — show another artwork by this artist *(up to 5)*\n"
-                "`$hint` — reveal a hint about the artist"
+                "Type **`n`** — show another artwork *(up to 5)*\n"
+                "Type **`h`** — reveal a hint about the artist"
             ),
             color=discord.Color.blurple(),
         )
@@ -377,7 +377,46 @@ class ArtGuesser(commands.Cog):
         if ctx.valid:
             return
 
-        guess = _normalize(message.content.strip())
+        content = message.content.strip()
+        lower = content.lower()
+
+        # ── n: next image ─────────────────────────────────────────────────────
+        if lower == "n":
+            MAX_EXTRA = 5
+            if game.extra_images_shown >= MAX_EXTRA:
+                await message.channel.send(f"Already shown {MAX_EXTRA} extra images — no more available!")
+                return
+            path = game.pop_image()
+            if path is None:
+                await message.channel.send("No more images available for this artist.")
+                return
+            game.extra_images_shown += 1
+            remaining = MAX_EXTRA - game.extra_images_shown
+            embed = discord.Embed(
+                title=f"Another artwork ({game.extra_images_shown}/{MAX_EXTRA})",
+                description=(
+                    f"{remaining} more available with `n`."
+                    if remaining > 0 else "That's the last extra image!"
+                ),
+                color=discord.Color.blue(),
+            )
+            embed.set_image(url="attachment://art.jpg")
+            await message.channel.send(embed=embed, file=discord.File(path, filename="art.jpg"))
+            return
+
+        # ── h: hint ───────────────────────────────────────────────────────────
+        if lower == "h":
+            key = game.next_hint()
+            if key is None:
+                await message.channel.send("No more hints! Make your best guess.")
+                return
+            total = len(game.hint_order)
+            given = len(game.hints_given)
+            embed = _render_hint(game.artist, key, given, total)
+            await message.channel.send(embed=embed)
+            return
+
+        guess = _normalize(content)
         answer = game.artist["name"]
         answer_norm = _normalize(answer)
 
