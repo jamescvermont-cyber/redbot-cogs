@@ -415,7 +415,7 @@ def main() -> None:
 
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
-    do_clean = "--no-clean" not in flags
+    do_clean = "--clean" in flags   # OCR text removal OFF by default; opt-in with --clean
 
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     all_brands = load_brands()
@@ -440,7 +440,7 @@ def main() -> None:
     print(f"  Candidates   : up to {MAX_IMAGES * CANDIDATES_MUL} URLs per brand")
     print(f"  Dedup        : phash distance ≤ {HASH_DISTANCE}")
     print(f"  Skip if      : folder already has ≥ {SKIP_THRESHOLD} images")
-    print(f"  Text removal : {'ON' if do_clean else 'OFF (--no-clean)'}")
+    print(f"  Text removal : {'ON (--clean)' if do_clean else 'OFF'}")
     if do_clean:
         print(f"    Fuzzy threshold : ≥{FUZZY_MATCH_THRESHOLD}% match → remove")
         print(f"    Area safety cap : >{TEXT_AREA_LIMIT*100:.0f}% of image → keep "
