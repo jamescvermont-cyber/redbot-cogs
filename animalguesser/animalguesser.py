@@ -147,6 +147,7 @@ class AnimalGame:
         self.images = images          # list[pathlib.Path]
         self.used: set = set()
         self.task = task
+        self.participants: set = set()
 
     def pop_image(self) -> "pathlib.Path | None":
         if not self.images:
@@ -330,10 +331,13 @@ class AnimalGuesser(commands.Cog):
         except asyncio.CancelledError:
             return  # game was won; task cancelled by on_message handler
 
-        if channel.id not in self.games:
+        game = self.games.pop(channel.id, None)
+        if game is None:
             return
 
-        del self.games[channel.id]
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(None, game.participants)
         embed = discord.Embed(
             title="Time's up!",
             description=f"Nobody guessed it. The animal was **{animal}**.",
@@ -409,6 +413,8 @@ class AnimalGuesser(commands.Cog):
         if ctx.valid:
             return
 
+        game.participants.add(message.author)
+
         if message.content.strip().lower() != game.animal.lower():
             return
 
@@ -416,6 +422,9 @@ class AnimalGuesser(commands.Cog):
         game.task.cancel()
         del self.games[message.channel.id]
 
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(message.author, game.participants)
         embed = discord.Embed(
             title="Correct!",
             description=(

@@ -335,6 +335,10 @@ class WordRush(commands.Cog):
             if alive:
                 winner = alive[0]
                 wins, games_played = await self._record_result(game.players, winner)
+                tp = self.bot.get_cog("TrackPoints")
+                if tp:
+                    participants = {p.member for p in game.players}
+                    await tp.record_game_result(winner.member, participants)
                 await game.channel.send(embed=_winner_embed(winner, wins, games_played))
 
         except asyncio.CancelledError:

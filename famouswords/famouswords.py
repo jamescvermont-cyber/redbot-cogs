@@ -713,6 +713,7 @@ class FamousWords(commands.Cog):
             "raw_answer": answer,
             "attribution": attribution,
             "quote_text": quote_text,
+            "participants": set(),
         }
         self.games[channel.id] = game
 
@@ -777,6 +778,9 @@ class FamousWords(commands.Cog):
             await self._timeout(channel, game)
 
     async def _timeout(self, channel: discord.TextChannel, game: dict):
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(None, game.get("participants", set()))
         revealed = game["quote_text"].replace("{BLANK}", f"**{game['raw_answer']}**")
         embed = discord.Embed(
             title="⏰  Time's Up!",
@@ -807,6 +811,8 @@ class FamousWords(commands.Cog):
             return
 
         game = self.games[message.channel.id]
+        game["participants"].add(message.author)
+
         if guess != game["answer"]:
             return
 
@@ -815,6 +821,10 @@ class FamousWords(commands.Cog):
         task = self._tasks.pop(message.channel.id, None)
         if task:
             task.cancel()
+
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(message.author, game["participants"])
 
         revealed = game["quote_text"].replace("{BLANK}", f"**{game['raw_answer']}**")
         embed = discord.Embed(

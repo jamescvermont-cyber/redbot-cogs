@@ -104,6 +104,7 @@ class FruitGame:
         self.used: set = set()        # indices already shown this round
         self.hints_used = 0
         self.task = task
+        self.participants: set = set()
 
     def pop_image(self) -> "pathlib.Path | None":
         if not self.images:
@@ -250,10 +251,13 @@ class FruitGuesser(commands.Cog):
         except asyncio.CancelledError:
             return  # game was won; task cancelled by on_message handler
 
-        if channel.id not in self.games:
+        game = self.games.pop(channel.id, None)
+        if game is None:
             return
 
-        del self.games[channel.id]
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(None, game.participants)
         embed = discord.Embed(
             title="Time's up!",
             description=f"Nobody guessed it. The fruit was **{fruit}**.",
@@ -328,6 +332,8 @@ class FruitGuesser(commands.Cog):
         if ctx.valid:
             return
 
+        game.participants.add(message.author)
+
         if message.content.strip().lower() != game.fruit.lower():
             return
 
@@ -335,6 +341,9 @@ class FruitGuesser(commands.Cog):
         game.task.cancel()
         del self.games[message.channel.id]
 
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(message.author, game.participants)
         embed = discord.Embed(
             title="Correct!",
             description=(

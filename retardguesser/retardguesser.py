@@ -104,6 +104,7 @@ class PersonGame:
         self.task = task                       # timeout asyncio.Task
         self.extra_images_shown: int = 0       # how many 'n' images sent
         self.hint_index: int = 0              # next hint slot (0–3; 4 = exhausted)
+        self.participants: set = set()
 
     def pop_image(self) -> "pathlib.Path | None":
         unused = [i for i in range(len(self.images)) if i not in self.used_images]
@@ -169,10 +170,13 @@ class RetardGuesser(commands.Cog):
         except asyncio.CancelledError:
             return
 
-        if channel.id not in self.games:
+        game = self.games.pop(channel.id, None)
+        if game is None:
             return
 
-        del self.games[channel.id]
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(None, game.participants)
         embed = discord.Embed(
             title="Time's up!",
             description=f"Nobody guessed it. The answer was **{person_name}**.",
@@ -322,6 +326,9 @@ class RetardGuesser(commands.Cog):
         guess = _normalize(content)
         full  = _normalize(game.person["name"])
         last  = _normalize(_last_name(game.person["name"]))
+
+        game.participants.add(message.author)
+
         if guess != full and guess != last:
             return
 
@@ -329,6 +336,9 @@ class RetardGuesser(commands.Cog):
         game.task.cancel()
         del self.games[message.channel.id]
 
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(message.author, game.participants)
         embed = discord.Embed(
             title="Correct!",
             description=(

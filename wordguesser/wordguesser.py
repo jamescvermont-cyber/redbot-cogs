@@ -1,7 +1,7 @@
 import asyncio
 import random
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import discord
@@ -36,6 +36,7 @@ class WordGame:
     word: str
     definition: str
     task: Optional[asyncio.Task] = None
+    participants: set = field(default_factory=set)
 
 
 # ── Embeds ────────────────────────────────────────────────────────────────────
@@ -146,6 +147,9 @@ class WordGuesser(commands.Cog):
             await asyncio.sleep(TIMEOUT - HINT_AT)
             if self.games.get(channel.id) is game:
                 self.games.pop(channel.id, None)
+                tp = self.bot.get_cog("TrackPoints")
+                if tp:
+                    await tp.record_game_result(None, game.participants)
                 await channel.send(
                     embed=_timeout_embed(game.word, game.definition),
                     view=WordPlayAgainView(self, channel.id),
@@ -168,11 +172,16 @@ class WordGuesser(commands.Cog):
         if ctx.valid:
             return
 
+        game.participants.add(message.author)
+
         guess = message.content.strip().lower()
         if guess == game.word.lower():
             self.games.pop(message.channel.id, None)
             if game.task:
                 game.task.cancel()
+            tp = self.bot.get_cog("TrackPoints")
+            if tp:
+                await tp.record_game_result(message.author, game.participants)
             await message.channel.send(
                 embed=_winner_embed(message.author, game.word, game.definition),
                 view=WordPlayAgainView(self, message.channel.id),

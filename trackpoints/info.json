@@ -1,0 +1,7 @@
+{
+    "name": "TrackPoints",
+    "short": "Persistent points leaderboard for game wins",
+    "description": "Tracks points and games played across all game cogs. Win a game to earn a point.",
+    "end_user_data_statement": "This cog stores each user's total points and games played per server.",
+    "hidden": false
+}

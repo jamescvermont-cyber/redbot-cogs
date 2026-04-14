@@ -1,6 +1,6 @@
 import asyncio
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import discord
@@ -61,6 +61,7 @@ class MovieGame:
     synopsis: str
     cast: list
     task: Optional[asyncio.Task] = None
+    participants: set = field(default_factory=set)
 
 
 # ── Embeds ────────────────────────────────────────────────────────────────────
@@ -199,6 +200,9 @@ class MovieGuesser(commands.Cog):
             await asyncio.sleep(TIMEOUT - SCRAMBLE_HINT_AT)
             if self.games.get(channel.id) is game:
                 self.games.pop(channel.id, None)
+                tp = self.bot.get_cog("TrackPoints")
+                if tp:
+                    await tp.record_game_result(None, game.participants)
                 await channel.send(
                     embed=_timeout_embed(game),
                     view=MoviePlayAgainView(self, channel.id),
@@ -221,10 +225,15 @@ class MovieGuesser(commands.Cog):
         if ctx.valid:
             return
 
+        game.participants.add(message.author)
+
         if _normalize(message.content) == _normalize(game.title):
             self.games.pop(message.channel.id, None)
             if game.task:
                 game.task.cancel()
+            tp = self.bot.get_cog("TrackPoints")
+            if tp:
+                await tp.record_game_result(message.author, game.participants)
             await message.channel.send(
                 embed=_winner_embed(message.author, game),
                 view=MoviePlayAgainView(self, message.channel.id),

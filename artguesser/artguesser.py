@@ -150,6 +150,7 @@ class ArtGame:
         self.hints_given: list = []
         self.hint_order: list = _build_hint_order(artist)
         self.extra_images_shown: int = 0
+        self.participants: set = set()
 
     def pop_image(self) -> "pathlib.Path | None":
         """Return a not-yet-shown image, cycling if all have been shown."""
@@ -233,10 +234,13 @@ class ArtGuesser(commands.Cog):
         except asyncio.CancelledError:
             return
 
-        if channel.id not in self.games:
+        game = self.games.pop(channel.id, None)
+        if game is None:
             return
 
-        del self.games[channel.id]
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(None, game.participants)
         embed = discord.Embed(
             title="Time's up!",
             description=f"Nobody guessed it. The artist was **{artist_name}**.",
@@ -420,6 +424,8 @@ class ArtGuesser(commands.Cog):
         answer = game.artist["name"]
         answer_norm = _normalize(answer)
 
+        game.participants.add(message.author)
+
         correct = (guess == answer_norm)
 
         # Accept partial surname match (e.g. "van Gogh" matches "Vincent van Gogh")
@@ -438,6 +444,9 @@ class ArtGuesser(commands.Cog):
         game.task.cancel()
         del self.games[message.channel.id]
 
+        tp = self.bot.get_cog("TrackPoints")
+        if tp:
+            await tp.record_game_result(message.author, game.participants)
         embed = discord.Embed(
             title="Correct!",
             description=(
