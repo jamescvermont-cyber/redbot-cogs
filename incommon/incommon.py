@@ -74,11 +74,7 @@ class ItemView(View):
         # Cache display name so we still have it if they leave before game ends
         game["user_names"][uid] = interaction.user.display_name
 
-        if prev:
-            label = f"Changed to **{CHOICE_LABELS[choice]}**"
-        else:
-            label = f"Locked in: **{CHOICE_LABELS[choice]}**"
-        await interaction.response.send_message(label, ephemeral=True)
+        await interaction.response.defer()
 
         # Update shared message with live response count (no choices revealed)
         count = len(game["current_responses"])
