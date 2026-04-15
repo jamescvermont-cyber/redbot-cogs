@@ -95,19 +95,19 @@ class ItemView(View):
         except Exception:
             pass
 
-    @discord.ui.button(label="Like",    style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="LIKE",    style=discord.ButtonStyle.secondary, row=0)
     async def like_it(self, interaction: discord.Interaction, button: Button):
         await self.handle_choice(interaction, "like")
 
-    @discord.ui.button(label="Love",    style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="LOVE",    style=discord.ButtonStyle.secondary, row=0)
     async def love_it(self, interaction: discord.Interaction, button: Button):
         await self.handle_choice(interaction, "love")
 
-    @discord.ui.button(label="Dislike", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="DISLIKE", style=discord.ButtonStyle.secondary, row=1)
     async def dont_like_it(self, interaction: discord.Interaction, button: Button):
         await self.handle_choice(interaction, "dont_like")
 
-    @discord.ui.button(label="Hate",    style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="HATE",    style=discord.ButtonStyle.secondary, row=1)
     async def hate_it(self, interaction: discord.Interaction, button: Button):
         await self.handle_choice(interaction, "hate")
 
