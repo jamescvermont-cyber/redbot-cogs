@@ -42,7 +42,7 @@ def _expand_word_forms(words: set) -> set:
     expanded: set = set(words)
     for word in words:
         w = word.lower()
-        if not w.isalpha() or len(w) < 4:
+        if not w.isalpha() or len(w) < 3:
             continue
         if not any(c in VOWELS for c in w):   # abbreviation — skip
             continue
@@ -72,12 +72,13 @@ def _load_dictionary() -> frozenset:
         except ImportError:
             pass
 
+    base_expanded = _expand_word_forms(base)
     slang_expanded = _expand_word_forms({w.lower() for w in SLANG_WORDS})
     # Add plural forms for proper nouns (e.g. "italian" → "italians")
     proper_expanded = PROPER_NOUNS | {
         w + "s" for w in PROPER_NOUNS if not w.endswith("s")
     }
-    return frozenset(base | slang_expanded | proper_expanded)
+    return frozenset(base_expanded | slang_expanded | proper_expanded)
 
 
 def _build_trigram_list(dictionary: frozenset) -> list:
